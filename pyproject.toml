@@ -16,7 +16,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = ["requests>=2.31.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
