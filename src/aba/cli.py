@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import sys
 from pathlib import Path
+from typing import Iterable
 
 from .agent_builder import AgentBuilderAgent
-from .language_model import RuleBasedLanguageModel
+from .language_model import OpenRouterLanguageModel, RuleBasedLanguageModel
 
 
 def _load_specification(args: argparse.Namespace) -> str:
@@ -40,6 +42,60 @@ def _print_plan(plan) -> None:
     for line in plan.conversation_starters:
         print(f" - {line}")
 
+def _format_chat_prompt(history: Iterable[tuple[str, str]]) -> str:
+    """Format conversation history for the language model."""
+
+    prologue = (
+        "You are the Agent Building Agent, an assistant that helps people "
+        "design and refine software agents. Respond with concrete advice, "
+        "clarifying questions, or implementation steps based on the most "
+        "recent user message."
+    )
+    transcript = "\n".join(f"{role.capitalize()}: {message}" for role, message in history)
+    return f"{prologue}\n\n{transcript}\nAgent:"
+
+
+@dataclass
+class _ChatState:
+    history: list[tuple[str, str]]
+
+
+def _run_chat_interface(args: argparse.Namespace) -> None:
+    try:
+        model = OpenRouterLanguageModel(model=args.model, api_key_env=args.api_key_env)
+    except RuntimeError as exc:  # pragma: no cover - requires environment configuration
+        raise SystemExit(str(exc)) from exc
+
+    state = _ChatState(history=[])
+    print("Starting interactive chat with the Agent Building Agent. Type '/exit' to quit.\n")
+
+    while True:
+        try:
+            user_message = input("You: ").strip()
+        except EOFError:
+            print()
+            break
+
+        if not user_message:
+            continue
+
+        if user_message.lower() in {"/exit", "/quit", "exit", "quit"}:
+            print("Exiting chat.")
+            break
+
+        state.history.append(("user", user_message))
+        prompt = _format_chat_prompt(state.history)
+
+        try:
+            response = model.complete(prompt)
+        except Exception as exc:  # pragma: no cover - network error paths
+            print(f"Error contacting language model: {exc}")
+            state.history.pop()
+            continue
+
+        state.history.append(("agent", response))
+        print(f"Agent: {response}\n")
+
 
 def app(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Agent Building Agent CLI")
@@ -58,7 +114,23 @@ def app(argv: list[str] | None = None) -> None:
         "--output", default="generated_agents", help="Directory to write agent files"
     )
 
+    chat_parser = subparsers.add_parser("chat", help="Start an interactive planning chat")
+    chat_parser.add_argument(
+        "--model",
+        default="google/gemini-flash-1.5",
+        help="OpenRouter model identifier to use for responses",
+    )
+    chat_parser.add_argument(
+        "--api-key-env",
+        default="OPENROUTER_API_KEY",
+        help="Environment variable containing the OpenRouter API key",
+    )
+
     args = parser.parse_args(argv)
+
+    if args.command == "chat":
+        _run_chat_interface(args)
+        return
 
     model = RuleBasedLanguageModel()
     agent = AgentBuilderAgent(language_model=model)

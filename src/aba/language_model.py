@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Protocol
 
 
@@ -47,3 +48,54 @@ class RuleBasedLanguageModel:
             )
 
         return " ".join(sentences)
+
+
+@dataclass
+class OpenRouterLanguageModel:
+    """Language model implementation backed by the OpenRouter API."""
+
+    model: str = "google/gemini-flash-1.5"
+    api_key_env: str = "OPENROUTER_API_KEY"
+    base_url: str = "https://openrouter.ai/api/v1/chat/completions"
+    timeout: float = 30.0
+
+    def complete(self, prompt: str) -> str:  # noqa: D401 - protocol short description
+        try:
+            import requests
+        except ModuleNotFoundError as exc:  # pragma: no cover - dependency missing
+            raise RuntimeError(
+                "The 'requests' package is required to use OpenRouterLanguageModel. "
+                "Install it with 'pip install requests'."
+            ) from exc
+
+        api_key = os.getenv(self.api_key_env)
+        if not api_key:
+            raise RuntimeError(
+                "OpenRouter API key is required. Set the "
+                f"{self.api_key_env!r} environment variable."
+            )
+
+        response = requests.post(
+            self.base_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+
+        payload = response.json()
+        try:
+            content = payload["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:  # pragma: no cover - defensive
+            raise RuntimeError("Unexpected response payload from OpenRouter") from exc
+
+        if not isinstance(content, str):  # pragma: no cover - defensive
+            raise RuntimeError("OpenRouter response did not include text content")
+
+        return content.strip()

@@ -10,7 +10,7 @@ capabilities, and generate starter files for your project.
 - Convert free-form briefs into structured agent plans.
 - Suggest tools, memory strategies, and conversation starters.
 - Materialise Python package scaffolds for new agents.
-- Simple CLI with `plan` and `materialize` commands.
+- Simple CLI with `plan`, `materialize`, and interactive `chat` commands.
 
 ## Installation
 
@@ -35,6 +35,20 @@ aba materialize --file spec.txt --output ./my_agent
 The CLI also accepts inline specifications or reads from standard input if no
 arguments are provided. Generated artifacts include a Python runtime module and
 a README with the inferred plan.
+
+### Interactive chat powered by OpenRouter
+
+You can brainstorm agent ideas in a conversational flow with a hosted language
+model. Obtain a free [OpenRouter](https://openrouter.ai/) API key (daily usage
+limits apply) and export it before starting the chat session:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+aba chat
+```
+
+Pass `--model` to try a different OpenRouter model identifier. Use `/exit` to
+leave the chat loop.
 
 ## Development
 
