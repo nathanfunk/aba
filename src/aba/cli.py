@@ -99,7 +99,7 @@ def _run_chat_interface(args: argparse.Namespace) -> None:
 
 def app(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Agent Building Agent CLI")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers = parser.add_subparsers(dest="command", required=False)
 
     plan_parser = subparsers.add_parser("plan", help="Generate a plan from a specification")
     plan_parser.add_argument("specification", nargs="?", help="Inline specification text")
@@ -126,7 +126,24 @@ def app(argv: list[str] | None = None) -> None:
         help="Environment variable containing the OpenRouter API key",
     )
 
+    # Add chat arguments to main parser for default behavior
+    parser.add_argument(
+        "--model",
+        default="openai/gpt-4o-mini",
+        help="OpenRouter model identifier to use for responses (default mode)",
+    )
+    parser.add_argument(
+        "--api-key-env",
+        default="OPENROUTER_API_KEY",
+        help="Environment variable containing the OpenRouter API key (default mode)",
+    )
+
     args = parser.parse_args(argv)
+
+    # Default to chat if no command specified
+    if args.command is None:
+        _run_chat_interface(args)
+        return
 
     if args.command == "chat":
         _run_chat_interface(args)

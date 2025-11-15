@@ -20,6 +20,27 @@ pip install -e .
 
 ## Usage
 
+### Interactive chat (default)
+
+The default mode is an interactive chat powered by OpenRouter. Simply run:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+aba
+```
+
+This starts a conversational interface where you can brainstorm agent ideas with
+a hosted language model. Obtain a free [OpenRouter](https://openrouter.ai/) API
+key (daily usage limits apply). Use `/exit` or `/quit` to leave the chat loop.
+
+Pass `--model` to try a different OpenRouter model identifier:
+
+```bash
+aba --model "openai/gpt-3.5-turbo"
+```
+
+### Planning and materialization
+
 Create a text file describing the agent you want to build, then run:
 
 ```bash
@@ -35,20 +56,6 @@ aba materialize --file spec.txt --output ./my_agent
 The CLI also accepts inline specifications or reads from standard input if no
 arguments are provided. Generated artifacts include a Python runtime module and
 a README with the inferred plan.
-
-### Interactive chat powered by OpenRouter
-
-You can brainstorm agent ideas in a conversational flow with a hosted language
-model. Obtain a free [OpenRouter](https://openrouter.ai/) API key (daily usage
-limits apply) and export it before starting the chat session:
-
-```bash
-export OPENROUTER_API_KEY="sk-or-v1-..."
-aba chat
-```
-
-Pass `--model` to try a different OpenRouter model identifier. Use `/exit` to
-leave the chat loop.
 
 ## Development
 

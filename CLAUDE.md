@@ -16,10 +16,10 @@ pip install -e .[dev]   # Include pytest for testing
 
 **Core CLI Commands:**
 ```bash
+aba                                                   # Interactive chat (default, requires OPENROUTER_API_KEY)
+aba --model "openai/gpt-3.5-turbo"                   # Chat with specific model
 aba plan --file spec.txt                              # Generate structured plan from specification
 aba materialize --file spec.txt --output ./my_agent   # Generate Python scaffold files
-aba chat                                              # Interactive chat (requires OPENROUTER_API_KEY)
-aba chat --model "google/gemini-flash-1.5"           # Chat with specific model
 ```
 
 **Development:**
