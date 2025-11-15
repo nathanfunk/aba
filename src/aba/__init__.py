@@ -1,15 +1,20 @@
-"""Agent Building Agent package."""
+"""Agent Builder package."""
 
-from .agent_builder import AgentBuilderAgent
+from .agent import Agent
+from .agent_manager import AgentManager
+from .capabilities import Capability, CAPABILITIES
 from .language_model import LanguageModel, OpenRouterLanguageModel, RuleBasedLanguageModel
-from .planning import AgentPlan, CapabilitySuggestion, FileArtifact
+from .runtime import AgentRuntime
+from .tools import TOOL_REGISTRY
 
 __all__ = [
-    "AgentBuilderAgent",
+    "Agent",
+    "AgentManager",
+    "Capability",
+    "CAPABILITIES",
     "LanguageModel",
     "RuleBasedLanguageModel",
     "OpenRouterLanguageModel",
-    "AgentPlan",
-    "CapabilitySuggestion",
-    "FileArtifact",
+    "AgentRuntime",
+    "TOOL_REGISTRY",
 ]
