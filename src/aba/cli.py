@@ -117,7 +117,7 @@ def app(argv: list[str] | None = None) -> None:
     chat_parser = subparsers.add_parser("chat", help="Start an interactive planning chat")
     chat_parser.add_argument(
         "--model",
-        default="google/gemini-flash-1.5",
+        default="openai/gpt-4o-mini",
         help="OpenRouter model identifier to use for responses",
     )
     chat_parser.add_argument(

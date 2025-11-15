@@ -54,7 +54,7 @@ class RuleBasedLanguageModel:
 class OpenRouterLanguageModel:
     """Language model implementation backed by the OpenRouter API."""
 
-    model: str = "google/gemini-flash-1.5"
+    model: str = "openai/gpt-4o-mini"
     api_key_env: str = "OPENROUTER_API_KEY"
     base_url: str = "https://openrouter.ai/api/v1/chat/completions"
     timeout: float = 30.0
@@ -80,6 +80,8 @@ class OpenRouterLanguageModel:
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/anthropics/agent-building-agent",
+                "X-Title": "Agent Building Agent",
             },
             json={
                 "model": self.model,
