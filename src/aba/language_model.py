@@ -55,6 +55,7 @@ class OpenRouterLanguageModel:
     """Language model implementation backed by the OpenRouter API."""
 
     model: str = "openai/gpt-4o-mini"
+    temperature: float = 0.7
     api_key_env: str = "OPENROUTER_API_KEY"
     base_url: str = "https://openrouter.ai/api/v1/chat/completions"
     timeout: float = 30.0
@@ -86,6 +87,7 @@ class OpenRouterLanguageModel:
             json={
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
+                "temperature": self.temperature,
             },
             timeout=self.timeout,
         )

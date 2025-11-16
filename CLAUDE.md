@@ -18,7 +18,7 @@ Key features:
 ### Core Components
 
 **Agent System:**
-- `agent.py` - Agent data model (name, description, capabilities, config)
+- `agent.py` - Agent data model with fields: name, description, version, created, last_used, capabilities, system_prompt, config, metadata
 - `agent_manager.py` - CRUD operations (load, save, list, delete agents)
 - `capabilities.py` - Capability definitions (what each capability enables)
 
@@ -139,7 +139,7 @@ History is stored as JSON in `~/.aba/history/{agent-name}.json`.
 On first run with no agents:
 1. CLI detects empty `~/.aba/agents/`
 2. Calls `AgentManager.bootstrap()`
-3. Creates `agent-builder` with full capabilities
+3. Creates `agent-builder` with elevated capabilities (agent-creation, file-operations, code-execution)
 4. Sets as last-used agent
 5. Runs agent-builder in chat mode
 
@@ -151,13 +151,15 @@ On first run with no agents:
 - Pass `_manager=test_manager` to tool functions in tests
 - All tests should be deterministic (no network calls, no randomness)
 
-Current test count: 47 tests across 6 test files
+Tests are organized across 6 test files (one per main module)
 
 ## Module Responsibilities
 
 **agent.py**
 - `Agent` dataclass with to_dict/from_dict serialization
 - Single source of truth for agent structure
+- Fields: name, description, version, created (ISO timestamp), last_used (ISO timestamp), capabilities (list), system_prompt, config (dict), metadata (dict)
+- All fields except name and description have sensible defaults
 
 **agent_manager.py**
 - `AgentManager` class handles all file I/O for agents

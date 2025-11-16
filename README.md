@@ -199,10 +199,10 @@ src/aba/
 tests/
 ├── test_agent.py
 ├── test_agent_manager.py
-├── test_capabilities.py
 ├── test_tools.py
 ├── test_runtime.py
-└── test_cli.py
+├── test_cli.py
+└── test_integration.py
 ```
 
 ## Configuration
@@ -264,7 +264,7 @@ Each agent can configure:
 
 - Agents are **minimal by default** - they have no capabilities unless explicitly granted
 - Code execution and file operations require explicit capability grants
-- The agent-builder is the only agent created with elevated capabilities
+- The agent-builder is the only agent created with elevated capabilities (agent-creation, file-operations, code-execution)
 - Always review generated agents before granting dangerous capabilities
 
 ## Troubleshooting
