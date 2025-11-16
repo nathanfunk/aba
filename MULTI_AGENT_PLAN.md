@@ -8,7 +8,7 @@ Transform ABA from a specialized "agent building tool" into a general agent fram
 
 1. **Minimal by default**: New agents have NO capabilities (just chat with LLM)
 2. **Capability-based security**: Each capability must be explicitly granted
-3. **Self-bootstrapping**: First run auto-creates `agent-builder` with full capabilities
+3. **Self-bootstrapping**: First run auto-creates `agent-builder` with elevated capabilities
 4. **Agent-centric CLI**: Just agent names, no special commands (except `--list`, `--import`, etc.)
 
 ## Key Architectural Changes

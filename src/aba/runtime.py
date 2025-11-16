@@ -82,7 +82,8 @@ class AgentRuntime:
             Configured language model
         """
         return OpenRouterLanguageModel(
-            model=self.agent.config.get("model", "openai/gpt-4o-mini")
+            model=self.agent.config.get("model", "openai/gpt-4o-mini"),
+            temperature=self.agent.config.get("temperature", 0.7)
         )
 
     def _load_history(self) -> list[tuple[str, str]]:
