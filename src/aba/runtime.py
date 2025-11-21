@@ -10,7 +10,8 @@ from .agent import Agent
 from .agent_manager import AgentManager
 from .capabilities import CAPABILITIES
 from .language_model import OpenRouterLanguageModel
-from .tools import TOOL_REGISTRY
+from .tool_schema import ToolSchema
+from .tools import TOOL_SCHEMAS
 
 
 class AgentRuntime:
@@ -25,15 +26,15 @@ class AgentRuntime:
         """
         self.agent = agent
         self.manager = manager
-        self.tools = self._load_tools()
+        self.tool_schemas = self._load_tools()
         self.history = self._load_history()
         self.model = self._create_model()
 
-    def _load_tools(self) -> dict[str, Callable]:
-        """Load tools based on agent capabilities.
+    def _load_tools(self) -> dict[str, ToolSchema]:
+        """Load tool schemas based on agent capabilities.
 
         Returns:
-            Dictionary mapping tool names to functions
+            Dictionary mapping tool names to ToolSchema objects
         """
         tools = {}
 
@@ -43,8 +44,8 @@ class AgentRuntime:
 
             capability = CAPABILITIES[capability_name]
             for tool_name in capability.tools:
-                if tool_name in TOOL_REGISTRY:
-                    tools[tool_name] = TOOL_REGISTRY[tool_name]
+                if tool_name in TOOL_SCHEMAS:
+                    tools[tool_name] = TOOL_SCHEMAS[tool_name]
 
         return tools
 
@@ -63,17 +64,18 @@ class AgentRuntime:
             if cap_name in CAPABILITIES:
                 parts.append(CAPABILITIES[cap_name].system_prompt_addition)
 
-        # Add tool descriptions if agent has capabilities
-        if self.tools:
-            parts.append("\nAvailable tools:")
-            for tool_name in sorted(self.tools.keys()):
-                tool_func = self.tools[tool_name]
-                doc = tool_func.__doc__ or "No description"
-                # Get first line of docstring
-                first_line = doc.strip().split("\n")[0]
-                parts.append(f"- {tool_name}: {first_line}")
+        # Note: With function calling, tool descriptions are in the API request,
+        # not the system prompt, so we don't need to list them here
 
         return "\n\n".join(parts)
+
+    def _build_tools_array(self) -> list[dict]:
+        """Build tools array for OpenRouter function calling API.
+
+        Returns:
+            List of tool definitions in OpenRouter format
+        """
+        return [schema.to_openrouter_format() for schema in self.tool_schemas.values()]
 
     def _create_model(self) -> OpenRouterLanguageModel:
         """Create language model for this agent.
@@ -137,7 +139,7 @@ class AgentRuntime:
 
         while True:
             try:
-                user_input = input(f"[{self.agent.name}] You: ").strip()
+                user_input = input("> ").strip()
             except EOFError:
                 print()
                 break
@@ -158,7 +160,7 @@ class AgentRuntime:
 
             try:
                 response = self._generate_response(user_input)
-                print(f"[{self.agent.name}] Agent: {response}\n")
+                print(f"{self.agent.name}: {response}\n")
                 self.history.append(("agent", response))
             except Exception as exc:
                 print(f"Error contacting language model: {exc}")
@@ -188,9 +190,9 @@ class AgentRuntime:
             else:
                 print("No capabilities (chat only)")
         elif cmd == "/tools":
-            if self.tools:
+            if self.tool_schemas:
                 print("Available tools:")
-                for tool_name in sorted(self.tools.keys()):
+                for tool_name in sorted(self.tool_schemas.keys()):
                     print(f"  - {tool_name}")
             else:
                 print("No tools available (agent has no capabilities)")
@@ -202,28 +204,109 @@ class AgentRuntime:
             print("Type '/help' for available commands.")
 
     def _generate_response(self, user_input: str) -> str:
-        """Generate response using the language model.
+        """Generate response using function calling.
 
         Args:
             user_input: User's message
 
         Returns:
-            Agent's response
+            Agent's final response
         """
+        # Build messages array for chat API
+        messages = []
+
+        # Add system prompt if present
         system_prompt = self._build_system_prompt()
-
-        # Format conversation history (last 10 turns to avoid context overflow)
-        conversation = []
-        for role, message in self.history[-20:]:  # Last 10 exchanges (20 messages)
-            conversation.append(f"{role.capitalize()}: {message}")
-
-        # Build the full prompt
         if system_prompt:
-            prompt = f"{system_prompt}\n\n---\n\nConversation:\n"
-        else:
-            prompt = "Conversation:\n"
+            messages.append({"role": "system", "content": system_prompt})
 
-        prompt += "\n".join(conversation)
-        prompt += f"\nAgent:"
+        # Add conversation history (last 10 exchanges to avoid context overflow)
+        for role, message in self.history[-20:]:
+            api_role = "user" if role == "user" else "assistant"
+            messages.append({"role": api_role, "content": message})
 
-        return self.model.complete(prompt)
+        # Add current user input
+        messages.append({"role": "user", "content": user_input})
+
+        # Build tools array
+        tools = self._build_tools_array() if self.tool_schemas else None
+
+        # Tool execution loop
+        max_iterations = 10  # Prevent infinite loops
+        for iteration in range(max_iterations):
+            # Call LLM
+            response = self.model.chat(messages, tools=tools)
+
+            # Check if model wants to call tools
+            tool_calls = response.get("tool_calls")
+
+            if not tool_calls:
+                # No tool calls - return final answer
+                content = response.get("content")
+                if content:
+                    return content
+                else:
+                    return "(No response from model)"
+
+            # Model wants to call tools - add assistant message to history
+            messages.append({
+                "role": "assistant",
+                "content": response.get("content"),
+                "tool_calls": tool_calls
+            })
+
+            # Execute each tool call
+            for tool_call in tool_calls:
+                tool_name = tool_call["function"]["name"]
+                tool_args_str = tool_call["function"]["arguments"]
+                tool_call_id = tool_call["id"]
+
+                # Execute tool
+                try:
+                    # Parse arguments
+                    tool_args = json.loads(tool_args_str)
+
+                    # Show tool execution to user
+                    print(f"\n🔧 Calling tool: {tool_name}")
+                    # Show arguments (except _manager which is internal)
+                    display_args = {k: v for k, v in tool_args.items() if not k.startswith("_")}
+                    if display_args:
+                        print(f"   Arguments: {json.dumps(display_args, indent=6)}")
+
+                    # Get tool schema
+                    if tool_name not in self.tool_schemas:
+                        result = f"Error: Tool '{tool_name}' not found"
+                    else:
+                        schema = self.tool_schemas[tool_name]
+
+                        # Add _manager parameter for agent management tools
+                        if "_manager" in schema.function.__code__.co_varnames:
+                            tool_args["_manager"] = self.manager
+
+                        # Call the tool
+                        result = schema.function(**tool_args)
+
+                    # Show result to user
+                    print(f"   Result: {result}\n")
+
+                except json.JSONDecodeError as e:
+                    result = f"Error: Invalid JSON arguments: {e}"
+                    print(f"   Result: {result}\n")
+                except TypeError as e:
+                    result = f"Error: Invalid arguments: {e}"
+                    print(f"   Result: {result}\n")
+                except Exception as e:
+                    result = f"Error executing tool: {e}"
+                    print(f"   Result: {result}\n")
+
+                # Add tool result to messages
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": str(result)
+                })
+
+            # Continue loop to get next response
+
+        # Max iterations reached
+        return "(Tool execution limit reached - please try a simpler request)"

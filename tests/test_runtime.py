@@ -20,7 +20,7 @@ def test_runtime_initialization(tmp_path):
 
     assert runtime.agent == agent
     assert runtime.manager == manager
-    assert len(runtime.tools) > 0  # Should have file operation tools
+    assert len(runtime.tool_schemas) > 0  # Should have file operation tools
     assert runtime.history == []
 
 
@@ -36,9 +36,9 @@ def test_runtime_loads_tools_for_capabilities(tmp_path):
     )
     runtime = AgentRuntime(agent, manager)
 
-    assert "read_file" in runtime.tools
-    assert "write_file" in runtime.tools
-    assert "list_files" in runtime.tools
+    assert "read_file" in runtime.tool_schemas
+    assert "write_file" in runtime.tool_schemas
+    assert "list_files" in runtime.tool_schemas
 
     # Agent with no capabilities
     minimal_agent = Agent(
@@ -48,7 +48,7 @@ def test_runtime_loads_tools_for_capabilities(tmp_path):
     )
     minimal_runtime = AgentRuntime(minimal_agent, manager)
 
-    assert len(minimal_runtime.tools) == 0
+    assert len(minimal_runtime.tool_schemas) == 0
 
 
 def test_runtime_builds_system_prompt(tmp_path):

@@ -13,8 +13,10 @@ from typing import Any
 
 from .agent import Agent
 from .agent_manager import AgentManager
+from .tool_schema import ToolSchema, tool
 
 
+@tool
 def create_agent(
     name: str,
     description: str,
@@ -52,6 +54,7 @@ def create_agent(
     return f"✓ Created agent '{name}'\nCapabilities: {caps_str}"
 
 
+@tool
 def modify_agent(name: str, _manager: AgentManager | None = None, **updates: Any) -> str:
     """Modify an existing agent.
 
@@ -84,6 +87,7 @@ def modify_agent(name: str, _manager: AgentManager | None = None, **updates: Any
     return f"✓ Updated agent '{name}'"
 
 
+@tool
 def delete_agent(name: str, _manager: AgentManager | None = None) -> str:
     """Delete an agent.
 
@@ -106,6 +110,7 @@ def delete_agent(name: str, _manager: AgentManager | None = None) -> str:
     return f"✓ Deleted agent '{name}'"
 
 
+@tool
 def list_agents(_manager: AgentManager | None = None) -> str:
     """List all available agents.
 
@@ -136,6 +141,7 @@ def list_agents(_manager: AgentManager | None = None) -> str:
     return "\n".join(lines)
 
 
+@tool
 def read_file(path: str) -> str:
     """Read contents of a file.
 
@@ -153,6 +159,7 @@ def read_file(path: str) -> str:
         return f"Error reading file: {e}"
 
 
+@tool
 def write_file(path: str, content: str) -> str:
     """Write content to a file.
 
@@ -170,6 +177,7 @@ def write_file(path: str, content: str) -> str:
         return f"Error writing file: {e}"
 
 
+@tool
 def list_files(path: str = ".") -> str:
     """List files in a directory.
 
@@ -199,6 +207,7 @@ def list_files(path: str = ".") -> str:
         return f"Error listing files: {e}"
 
 
+@tool
 def delete_file(path: str) -> str:
     """Delete a file.
 
@@ -219,6 +228,7 @@ def delete_file(path: str) -> str:
         return f"Error deleting file: {e}"
 
 
+@tool
 def exec_python(code: str) -> str:
     """Execute Python code.
 
@@ -247,6 +257,7 @@ def exec_python(code: str) -> str:
         return f"Error executing Python code: {e}"
 
 
+@tool
 def exec_shell(command: str) -> str:
     """Execute a shell command.
 
@@ -276,6 +287,7 @@ def exec_shell(command: str) -> str:
         return f"Error executing shell command: {e}"
 
 
+@tool
 def web_search(query: str) -> str:
     """Search the web (placeholder - requires implementation).
 
@@ -288,6 +300,7 @@ def web_search(query: str) -> str:
     return f"[Web search not yet implemented for query: {query}]"
 
 
+@tool
 def web_fetch(url: str) -> str:
     """Fetch content from a URL (placeholder - requires implementation).
 
@@ -300,8 +313,9 @@ def web_fetch(url: str) -> str:
     return f"[Web fetch not yet implemented for URL: {url}]"
 
 
-# Tool registry maps tool names to functions
-TOOL_REGISTRY = {
+# Tool schemas (decorated functions return ToolSchema objects)
+# These contain both the function AND the schema for function calling
+TOOL_SCHEMAS: dict[str, ToolSchema] = {
     "create_agent": create_agent,
     "modify_agent": modify_agent,
     "delete_agent": delete_agent,
@@ -314,4 +328,9 @@ TOOL_REGISTRY = {
     "exec_shell": exec_shell,
     "web_search": web_search,
     "web_fetch": web_fetch,
+}
+
+# Tool registry maps tool names to functions (for backward compatibility)
+TOOL_REGISTRY = {
+    name: schema.function for name, schema in TOOL_SCHEMAS.items()
 }

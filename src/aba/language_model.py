@@ -61,6 +61,14 @@ class OpenRouterLanguageModel:
     timeout: float = 30.0
 
     def complete(self, prompt: str) -> str:  # noqa: D401 - protocol short description
+        """Legacy completion method (for backward compatibility).
+
+        Args:
+            prompt: Text prompt to send to the model
+
+        Returns:
+            Model's text response
+        """
         try:
             import requests
         except ModuleNotFoundError as exc:  # pragma: no cover - dependency missing
@@ -103,3 +111,61 @@ class OpenRouterLanguageModel:
             raise RuntimeError("OpenRouter response did not include text content")
 
         return content.strip()
+
+    def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None
+    ) -> dict:
+        """Chat with function calling support.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content' keys
+            tools: Optional list of tool definitions for function calling
+
+        Returns:
+            Raw API response dictionary containing message and/or tool_calls
+        """
+        try:
+            import requests
+        except ModuleNotFoundError as exc:  # pragma: no cover - dependency missing
+            raise RuntimeError(
+                "The 'requests' package is required to use OpenRouterLanguageModel. "
+                "Install it with 'pip install requests'."
+            ) from exc
+
+        api_key = os.getenv(self.api_key_env)
+        if not api_key:
+            raise RuntimeError(
+                "OpenRouter API key is required. Set the "
+                f"{self.api_key_env!r} environment variable."
+            )
+
+        request_body = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": self.temperature,
+        }
+
+        if tools:
+            request_body["tools"] = tools
+            request_body["tool_choice"] = "auto"
+
+        response = requests.post(
+            self.base_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/anthropics/agent-building-agent",
+                "X-Title": "Agent Building Agent",
+            },
+            json=request_body,
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+
+        payload = response.json()
+        try:
+            return payload["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError) as exc:  # pragma: no cover - defensive
+            raise RuntimeError("Unexpected response payload from OpenRouter") from exc

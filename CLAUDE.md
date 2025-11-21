@@ -23,9 +23,10 @@ Key features:
 - `capabilities.py` - Capability definitions (what each capability enables)
 
 **Runtime:**
-- `runtime.py` - AgentRuntime class that runs agents in chat mode
-- `tools.py` - Tool implementations (file ops, code exec, agent creation)
-- `language_model.py` - LLM integrations (OpenRouter)
+- `runtime.py` - AgentRuntime class that runs agents with function calling
+- `tools.py` - Tool implementations decorated with @tool for schema generation
+- `tool_schema.py` - Tool decorator and schema system (inspired by LangChain)
+- `language_model.py` - LLM integrations (OpenRouter with function calling support)
 
 **CLI:**
 - `cli.py` - Command-line interface (agent selection, management flags)
@@ -95,6 +96,46 @@ Agents are **minimal by default** (no capabilities = chat only). Capabilities mu
 - **web-access** - Search web and fetch URLs (placeholder implementation)
 
 Each capability grants access to specific tools (see `capabilities.py`).
+
+## Function Calling Architecture
+
+aba uses OpenRouter's function calling API for structured tool invocation:
+
+**Tool Definition (LangChain-inspired decorator):**
+```python
+from .tool_schema import tool
+
+@tool
+def read_file(path: str) -> str:
+    """Read contents of a file.
+
+    Args:
+        path: Path to file to read
+    """
+    return Path(path).read_text()
+```
+
+The `@tool` decorator:
+- Extracts schema from function signature and docstring
+- Converts Python types to JSON schema types
+- Creates ToolSchema object with OpenRouter-compatible format
+- Skips internal parameters (those starting with `_`)
+
+**Tool Execution Loop (runtime.py:206-299):**
+1. Build messages array with system prompt + history
+2. Build tools array from agent's capabilities
+3. Call LLM with messages + tools
+4. If model returns tool_calls:
+   - Execute each tool function
+   - Add results to messages as "tool" role
+   - Loop back to step 3
+5. Return final text response when no more tool calls
+
+**Benefits over string-based approach:**
+- Structured, reliable tool calls (no parsing needed)
+- Automatic parameter validation via JSON schema
+- Models trained specifically for function calling format
+- Built-in execution loop with tool results
 
 ## Important Patterns
 
@@ -171,16 +212,24 @@ Tests are organized across 6 test files (one per main module)
 - `CAPABILITIES` registry maps names to tools and prompts
 - Used by runtime to load tools and build system prompts
 
+**tool_schema.py**
+- `@tool` decorator extracts schema from functions
+- `ToolSchema` dataclass with to_openrouter_format() method
+- Converts Python types to JSON schema types
+- Parses docstrings for parameter descriptions
+
 **tools.py**
-- Tool functions that agents can use
-- Each function takes `_manager` param for testability
+- Tool functions decorated with @tool
+- Each function takes `_manager` param for testability (auto-injected by runtime)
 - Functions return strings (success/error messages)
-- Tool registry maps names to functions
+- `TOOL_SCHEMAS` registry maps names to ToolSchema objects
+- `TOOL_REGISTRY` for backward compatibility (maps to functions)
 
 **runtime.py**
-- `AgentRuntime` class runs the chat loop
-- Loads tools based on capabilities
-- Builds system prompt from agent.system_prompt + capability additions
+- `AgentRuntime` class runs the function calling loop
+- Loads tool schemas based on capabilities
+- Uses OpenRouter function calling API with tools parameter
+- Executes tool calls and returns results to LLM
 - Handles special commands (/help, /capabilities, /tools, /clear)
 - Saves/loads history
 
@@ -212,16 +261,33 @@ Tests are organized across 6 test files (one per main module)
 ### Adding a New Capability
 
 1. Add to `CAPABILITIES` in `capabilities.py`
-2. Implement tool functions in `tools.py`
-3. Add tool names to `TOOL_REGISTRY`
+2. Implement tool functions in `tools.py` (decorated with @tool)
+3. Add tool names to `TOOL_SCHEMAS` registry
 4. Test with an agent that has the capability
 
 ### Adding a New Tool
 
-1. Implement function in `tools.py` with `_manager` param
-2. Add to `TOOL_REGISTRY`
+1. Implement function in `tools.py` with proper type hints and docstring:
+   ```python
+   @tool
+   def my_tool(param1: str, param2: int = 10, _manager=None) -> str:
+       """Brief description of what the tool does.
+
+       Args:
+           param1: Description of param1
+           param2: Description of param2
+           _manager: Internal parameter (auto-injected, not in schema)
+       """
+       return f"Result: {param1} x {param2}"
+   ```
+2. Add to `TOOL_SCHEMAS` dictionary
 3. Add tool name to appropriate capability in `capabilities.py`
 4. Write tests in `tests/test_tools.py`
+
+**Important:** The @tool decorator automatically extracts the schema, so ensure:
+- All parameters have type hints
+- Docstring includes Args section with parameter descriptions
+- Internal params (like `_manager`) start with underscore
 
 ### Modifying Agent Structure
 
@@ -270,4 +336,8 @@ pytest tests/test_runtime.py::test_runtime_initialization -v
 - History is saved on runtime exit, not continuously
 - Last-used agent is set on normal exit only (not on Ctrl+C)
 - Tool execution is synchronous (no async/await)
-- LLM prompts include last 20 messages (10 exchanges) to avoid context overflow
+- Function calling uses OpenRouter's native API (not custom parsing)
+- Tool execution loop has 10 iteration limit to prevent infinite loops
+- Messages include last 20 messages (10 exchanges) to avoid context overflow
+- Tool schemas auto-generated from type hints and docstrings via @tool decorator
+- Internal parameters (starting with _) excluded from schemas but auto-injected at runtime

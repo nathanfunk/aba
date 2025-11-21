@@ -49,7 +49,7 @@ def test_full_bootstrap_and_agent_creation_workflow(tmp_path):
     runtime = AgentRuntime(test_bot, manager)
 
     assert runtime.agent == test_bot
-    assert len(runtime.tools) == 0  # No capabilities = no tools
+    assert len(runtime.tool_schemas) == 0  # No capabilities = no tools
     assert len(runtime.history) == 0
 
     # Step 5: Verify agent list shows both agents
@@ -75,10 +75,10 @@ def test_agent_with_file_operations_capability(tmp_path):
     runtime = AgentRuntime(file_agent, manager)
 
     # Verify file operation tools are available
-    assert "read_file" in runtime.tools
-    assert "write_file" in runtime.tools
-    assert "list_files" in runtime.tools
-    assert "delete_file" in runtime.tools
+    assert "read_file" in runtime.tool_schemas
+    assert "write_file" in runtime.tool_schemas
+    assert "list_files" in runtime.tool_schemas
+    assert "delete_file" in runtime.tool_schemas
 
     # Verify system prompt includes file operations guidance
     sys_prompt = runtime._build_system_prompt()
@@ -218,7 +218,7 @@ def test_capability_security_model(tmp_path):
     manager.save_agent(minimal)
     runtime_minimal = AgentRuntime(minimal, manager)
 
-    assert len(runtime_minimal.tools) == 0
+    assert len(runtime_minimal.tool_schemas) == 0
 
     # Agent with one capability
     file_agent = Agent(
@@ -230,10 +230,10 @@ def test_capability_security_model(tmp_path):
     runtime_file = AgentRuntime(file_agent, manager)
 
     # Should only have file tools, not agent-creation tools
-    assert "read_file" in runtime_file.tools
-    assert "write_file" in runtime_file.tools
-    assert "create_agent" not in runtime_file.tools
-    assert "exec_python" not in runtime_file.tools
+    assert "read_file" in runtime_file.tool_schemas
+    assert "write_file" in runtime_file.tool_schemas
+    assert "create_agent" not in runtime_file.tool_schemas
+    assert "exec_python" not in runtime_file.tool_schemas
 
     # Agent with multiple capabilities
     power_agent = Agent(
@@ -245,6 +245,6 @@ def test_capability_security_model(tmp_path):
     runtime_power = AgentRuntime(power_agent, manager)
 
     # Should have all tools
-    assert "read_file" in runtime_power.tools
-    assert "exec_python" in runtime_power.tools
-    assert "create_agent" in runtime_power.tools
+    assert "read_file" in runtime_power.tool_schemas
+    assert "exec_python" in runtime_power.tool_schemas
+    assert "create_agent" in runtime_power.tool_schemas
