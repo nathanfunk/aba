@@ -34,7 +34,10 @@ CAPABILITIES = {
             "- file-operations: Read and write files\n"
             "- code-execution: Execute Python and shell commands\n"
             "- web-access: Search and fetch web content\n\n"
-            "Most agents should start with NO capabilities and just use the language model for chat."
+            "Most agents should start with NO capabilities and just use the language model for chat.\n\n"
+            "IMPORTANT: These tools only manage agent definition files. You CANNOT switch to or run "
+            "other agents from within this chat session. If the user wants to use a different agent, "
+            "they must exit this session and run `aba <agent-name>` from the command line."
         )
     ),
     "file-operations": Capability(
