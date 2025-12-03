@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from ..agent_manager import AgentManager
+from .agent_session import AgentSession
 
 
 app = FastAPI(
@@ -117,13 +118,11 @@ async def get_agent(agent_name: str):
         raise HTTPException(status_code=500, detail=f"Error loading agent: {e}")
 
 
-# WebSocket endpoint (basic echo for Phase 1)
+# WebSocket endpoint (with streaming and tool execution)
 
 @app.websocket("/ws/chat/{agent_name}")
 async def websocket_chat(websocket: WebSocket, agent_name: str):
-    """WebSocket endpoint for agent chat.
-
-    Phase 1: Basic echo functionality for testing
+    """WebSocket endpoint for agent chat with streaming support.
 
     Args:
         websocket: WebSocket connection
@@ -146,15 +145,18 @@ async def websocket_chat(websocket: WebSocket, agent_name: str):
 
         agent = manager.load_agent(agent_name)
 
+        # Create session
+        session = AgentSession(agent, manager, websocket)
+
         # Send initial info
         await websocket.send_json({
             "type": "info",
             "message": f"Connected to agent: {agent.name}",
             "capabilities": agent.capabilities,
-            "tools": []  # Will be populated in Phase 3
+            "tools": list(session.tool_schemas.keys())
         })
 
-        # Message loop (echo for now)
+        # Message loop
         while True:
             # Receive message
             data = await websocket.receive_json()
@@ -163,41 +165,20 @@ async def websocket_chat(websocket: WebSocket, agent_name: str):
 
             if message_type == "user_message":
                 content = data.get("content", "")
-
-                # Echo back the message (Phase 1 test)
-                await websocket.send_json({
-                    "type": "stream_chunk",
-                    "content": f"Echo: {content}",
-                    "is_complete": False
-                })
-
-                await websocket.send_json({
-                    "type": "stream_chunk",
-                    "content": "",
-                    "is_complete": True
-                })
-
-                await websocket.send_json({
-                    "type": "agent_message",
-                    "content": f"Echo: {content}",
-                    "usage": {
-                        "prompt_tokens": 0,
-                        "completion_tokens": 0,
-                        "total_tokens": 0
-                    }
-                })
+                await session.handle_user_message(content)
 
             elif message_type == "clear_history":
+                session.clear_history()
                 await websocket.send_json({
                     "type": "info",
-                    "message": "History cleared (not implemented yet)"
+                    "message": "History cleared"
                 })
 
             elif message_type == "get_capabilities":
                 await websocket.send_json({
                     "type": "info",
                     "capabilities": agent.capabilities,
-                    "tools": []
+                    "tools": list(session.tool_schemas.keys())
                 })
 
             else:
@@ -208,8 +189,12 @@ async def websocket_chat(websocket: WebSocket, agent_name: str):
                 })
 
     except WebSocketDisconnect:
-        # Client disconnected
-        pass
+        # Client disconnected - save history
+        try:
+            session._save_history()
+            manager.set_last_agent(agent_name)
+        except:
+            pass
     except Exception as e:
         # Send error to client if still connected
         try:
