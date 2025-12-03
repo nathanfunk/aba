@@ -313,6 +313,62 @@ def web_fetch(url: str) -> str:
     return f"[Web fetch not yet implemented for URL: {url}]"
 
 
+@tool
+def get_context_info(_runtime: Any = None) -> str:
+    """Get information about current context window usage.
+
+    Args:
+        _runtime: Runtime instance (auto-injected)
+
+    Returns:
+        Context usage information including tokens used and limits
+    """
+    if _runtime is None:
+        return "Error: Runtime context not available"
+
+    # Get usage stats
+    usage = _runtime.current_usage
+    model = _runtime.agent.config.get("model", "openai/gpt-4o-mini")
+
+    # Model context window sizes (in tokens)
+    context_limits = {
+        "openai/gpt-4o": 128000,
+        "openai/gpt-4o-mini": 128000,
+        "openai/gpt-4-turbo": 128000,
+        "openai/gpt-3.5-turbo": 16385,
+        "anthropic/claude-3.5-sonnet": 200000,
+        "anthropic/claude-3-opus": 200000,
+        "anthropic/claude-3-sonnet": 200000,
+        "anthropic/claude-3-haiku": 200000,
+        "google/gemini-pro": 32768,
+        "meta-llama/llama-3-70b-instruct": 8192,
+    }
+
+    context_limit = context_limits.get(model, 128000)  # Default to 128k
+
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    total_tokens = usage.get("total_tokens", 0)
+
+    if total_tokens > 0:
+        usage_percent = (total_tokens / context_limit) * 100
+
+        lines = [
+            f"Context Window Usage:",
+            f"  Model: {model}",
+            f"  Context limit: {context_limit:,} tokens",
+            f"  Prompt tokens: {prompt_tokens:,}",
+            f"  Completion tokens: {completion_tokens:,}",
+            f"  Total tokens: {total_tokens:,}",
+            f"  Usage: {usage_percent:.1f}%",
+            f"  Remaining: {context_limit - total_tokens:,} tokens"
+        ]
+
+        return "\n".join(lines)
+    else:
+        return f"No usage data available yet.\nModel: {model}\nContext limit: {context_limit:,} tokens"
+
+
 # Tool schemas (decorated functions return ToolSchema objects)
 # These contain both the function AND the schema for function calling
 TOOL_SCHEMAS: dict[str, ToolSchema] = {
@@ -328,6 +384,7 @@ TOOL_SCHEMAS: dict[str, ToolSchema] = {
     "exec_shell": exec_shell,
     "web_search": web_search,
     "web_fetch": web_fetch,
+    "get_context_info": get_context_info,
 }
 
 # Tool registry maps tool names to functions (for backward compatibility)

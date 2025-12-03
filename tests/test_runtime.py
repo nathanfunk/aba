@@ -48,7 +48,8 @@ def test_runtime_loads_tools_for_capabilities(tmp_path):
     )
     minimal_runtime = AgentRuntime(minimal_agent, manager)
 
-    assert len(minimal_runtime.tool_schemas) == 0
+    assert len(minimal_runtime.tool_schemas) == 1  # Always includes get_context_info
+    assert "get_context_info" in minimal_runtime.tool_schemas
 
 
 def test_runtime_builds_system_prompt(tmp_path):

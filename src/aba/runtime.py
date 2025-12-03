@@ -29,6 +29,7 @@ class AgentRuntime:
         self.tool_schemas = self._load_tools()
         self.history = self._load_history()
         self.model = self._create_model()
+        self.current_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def _load_tools(self) -> dict[str, ToolSchema]:
         """Load tool schemas based on agent capabilities.
@@ -46,6 +47,10 @@ class AgentRuntime:
             for tool_name in capability.tools:
                 if tool_name in TOOL_SCHEMAS:
                     tools[tool_name] = TOOL_SCHEMAS[tool_name]
+
+        # Always include get_context_info tool (informational, always safe)
+        if "get_context_info" in TOOL_SCHEMAS:
+            tools["get_context_info"] = TOOL_SCHEMAS["get_context_info"]
 
         return tools
 
@@ -162,6 +167,9 @@ class AgentRuntime:
                 response = self._generate_response(user_input)
                 print(f"{self.agent.name}: {response}\n")
                 self.history.append(("agent", response))
+
+                # Display token usage
+                self._display_usage_info()
             except Exception as exc:
                 print(f"Error contacting language model: {exc}")
                 self.history.pop()  # Remove user message on error
@@ -203,6 +211,41 @@ class AgentRuntime:
             print(f"Unknown command: {command}")
             print("Type '/help' for available commands.")
 
+    def _display_usage_info(self) -> None:
+        """Display token usage and warnings."""
+        usage = self.current_usage
+        total_tokens = usage.get("total_tokens", 0)
+
+        if total_tokens == 0:
+            return
+
+        # Model context window sizes
+        context_limits = {
+            "openai/gpt-4o": 128000,
+            "openai/gpt-4o-mini": 128000,
+            "openai/gpt-4-turbo": 128000,
+            "openai/gpt-3.5-turbo": 16385,
+            "anthropic/claude-3.5-sonnet": 200000,
+            "anthropic/claude-3-opus": 200000,
+            "anthropic/claude-3-sonnet": 200000,
+            "anthropic/claude-3-haiku": 200000,
+            "google/gemini-pro": 32768,
+            "meta-llama/llama-3-70b-instruct": 8192,
+        }
+
+        model = self.agent.config.get("model", "openai/gpt-4o-mini")
+        context_limit = context_limits.get(model, 128000)
+        usage_percent = (total_tokens / context_limit) * 100
+
+        # Display usage
+        print(f"📊 Tokens: {total_tokens:,} / {context_limit:,} ({usage_percent:.1f}%)")
+
+        # Show warnings when approaching limit
+        if usage_percent >= 90:
+            print("⚠️  WARNING: Approaching context limit! Consider clearing history with /clear")
+        elif usage_percent >= 75:
+            print("⚠️  Context usage is high. You may want to clear history soon.")
+
     def _generate_response(self, user_input: str) -> str:
         """Generate response using function calling.
 
@@ -235,7 +278,10 @@ class AgentRuntime:
         max_iterations = 10  # Prevent infinite loops
         for iteration in range(max_iterations):
             # Call LLM
-            response = self.model.chat(messages, tools=tools)
+            response, usage = self.model.chat(messages, tools=tools)
+
+            # Update usage tracking
+            self.current_usage = usage
 
             # Check if model wants to call tools
             tool_calls = response.get("tool_calls")
@@ -282,6 +328,10 @@ class AgentRuntime:
                         # Add _manager parameter for agent management tools
                         if "_manager" in schema.function.__code__.co_varnames:
                             tool_args["_manager"] = self.manager
+
+                        # Add _runtime parameter for context info tools
+                        if "_runtime" in schema.function.__code__.co_varnames:
+                            tool_args["_runtime"] = self
 
                         # Call the tool
                         result = schema.function(**tool_args)

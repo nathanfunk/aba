@@ -116,7 +116,7 @@ class OpenRouterLanguageModel:
         self,
         messages: list[dict],
         tools: list[dict] | None = None
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """Chat with function calling support.
 
         Args:
@@ -124,7 +124,9 @@ class OpenRouterLanguageModel:
             tools: Optional list of tool definitions for function calling
 
         Returns:
-            Raw API response dictionary containing message and/or tool_calls
+            Tuple of (message dict, usage dict) where:
+            - message: Raw API response containing message and/or tool_calls
+            - usage: Token usage stats (prompt_tokens, completion_tokens, total_tokens)
         """
         try:
             import requests
@@ -166,6 +168,12 @@ class OpenRouterLanguageModel:
 
         payload = response.json()
         try:
-            return payload["choices"][0]["message"]
+            message = payload["choices"][0]["message"]
+            usage = payload.get("usage", {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0
+            })
+            return message, usage
         except (KeyError, IndexError, TypeError) as exc:  # pragma: no cover - defensive
             raise RuntimeError("Unexpected response payload from OpenRouter") from exc

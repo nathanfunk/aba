@@ -49,7 +49,8 @@ def test_full_bootstrap_and_agent_creation_workflow(tmp_path):
     runtime = AgentRuntime(test_bot, manager)
 
     assert runtime.agent == test_bot
-    assert len(runtime.tool_schemas) == 0  # No capabilities = no tools
+    assert len(runtime.tool_schemas) == 1  # Always includes get_context_info
+    assert "get_context_info" in runtime.tool_schemas
     assert len(runtime.history) == 0
 
     # Step 5: Verify agent list shows both agents
@@ -218,7 +219,8 @@ def test_capability_security_model(tmp_path):
     manager.save_agent(minimal)
     runtime_minimal = AgentRuntime(minimal, manager)
 
-    assert len(runtime_minimal.tool_schemas) == 0
+    assert len(runtime_minimal.tool_schemas) == 1  # Always includes get_context_info
+    assert "get_context_info" in runtime_minimal.tool_schemas
 
     # Agent with one capability
     file_agent = Agent(
