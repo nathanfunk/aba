@@ -15,6 +15,7 @@ The system includes a special `agent-builder` agent that can create and manage o
 - **Persistent chat history** - Conversations resume where you left off
 - **Self-bootstrapping** - Creates the agent-builder on first run
 - **Simple CLI** - Just type `aba` to start chatting
+- **Web Interface** - Modern React UI with real-time streaming chat
 
 ## Installation
 
@@ -45,6 +46,46 @@ aba code-reviewer
 
 # Get help
 aba --help
+```
+
+## Web Interface
+
+ABA includes a modern web interface with real-time streaming chat.
+
+### Starting the Web Server
+
+```bash
+# Activate your virtual environment
+source venv/bin/activate
+
+# Start the web server (runs on port 8000)
+python -m aba.web.server
+
+# Or if you've installed the package with entry points:
+aba-web
+```
+
+The web interface will be available at:
+- **Main UI**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs (interactive FastAPI documentation)
+
+### Web Interface Features
+
+- **Real-time streaming responses** - See agent responses as they're generated
+- **Agent selection** - Switch between agents from the web UI
+- **Tool execution visibility** - Watch tools being called and see their results
+- **Chat history** - Full conversation history with formatted messages
+- **Context tracking** - Monitor token usage and context window status
+- **Modern UI** - Clean, responsive interface built with React
+
+### Building the Frontend
+
+The frontend is pre-built and included in the package. To rebuild:
+
+```bash
+cd web-ui
+npm install
+npm run build  # Builds to ../src/aba/web/static/
 ```
 
 ## Usage
@@ -194,7 +235,20 @@ src/aba/
 ├── tools.py           # Tool implementations
 ├── runtime.py         # Agent execution runtime
 ├── language_model.py  # LLM integrations
-└── cli.py             # Command-line interface
+├── cli.py             # Command-line interface
+└── web/               # Web interface
+    ├── server.py          # FastAPI server with REST + WebSocket
+    ├── agent_session.py   # Async agent runtime for web
+    ├── streaming_model.py # OpenRouter SSE streaming client
+    ├── messages.py        # WebSocket protocol definitions
+    └── static/            # Built React frontend
+
+web-ui/                # React frontend source
+├── src/
+│   ├── App.tsx            # Main application
+│   ├── ChatMessage.tsx    # Message display component
+│   └── useWebSocket.ts    # WebSocket hook
+└── package.json
 
 tests/
 ├── test_agent.py
@@ -269,7 +323,9 @@ Each agent can configure:
 
 ## Troubleshooting
 
-### "No agents found"
+### CLI Issues
+
+**"No agents found"**
 
 On first run, the system auto-creates `agent-builder`. If deleted:
 
@@ -277,7 +333,7 @@ On first run, the system auto-creates `agent-builder`. If deleted:
 aba  # Will recreate agent-builder automatically
 ```
 
-### "Error contacting language model"
+**"Error contacting language model"**
 
 Ensure your OpenRouter API key is set:
 
@@ -286,12 +342,16 @@ export OPENROUTER_API_KEY="sk-or-v1-..."
 aba
 ```
 
-### Reset Everything
+**Reset Everything**
 
 ```bash
 rm -rf ~/.aba
 aba  # Starts fresh
 ```
+
+### Web Interface Issues
+
+For web interface troubleshooting (connection issues, tool execution, logging, etc.), see [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## License
 

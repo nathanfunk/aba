@@ -31,8 +31,16 @@ Key features:
 **CLI:**
 - `cli.py` - Command-line interface (agent selection, management flags)
 
+**Web Interface:**
+- `web/server.py` - FastAPI application with REST API and WebSocket endpoints
+- `web/agent_session.py` - Async agent runtime for web (non-blocking tool execution)
+- `web/streaming_model.py` - OpenRouter SSE streaming client (parses Server-Sent Events)
+- `web/messages.py` - WebSocket protocol message definitions
+- `web/static/` - Built React frontend (served by FastAPI)
+
 ### Data Flow
 
+**CLI Flow:**
 ```
 aba agent-name
     ↓
@@ -45,6 +53,31 @@ Runtime loads tools based on agent.capabilities
 Chat loop: user input → LLM → response
     ↓
 History saved to ~/.aba/history/agent-name.json
+```
+
+**Web Interface Flow:**
+```
+User opens http://localhost:8000
+    ↓
+FastAPI serves React UI from web/static/
+    ↓
+User selects agent → WebSocket connects to /ws/chat/{agent_name}
+    ↓
+AgentSession loads agent and tools based on capabilities
+    ↓
+User sends message via WebSocket
+    ↓
+AgentSession.handle_user_message() processes message
+    ↓
+StreamingModel.chat_stream() calls OpenRouter API with SSE
+    ↓
+Server streams chunks to client in real-time:
+  - stream_chunk: partial text responses
+  - tool_call: when agent invokes a tool
+  - tool_result: tool execution output
+  - stream_complete: response finished
+    ↓
+History saved to ~/.aba/history/{agent-name}.json on disconnect
 ```
 
 ### Storage Structure
@@ -61,12 +94,20 @@ History saved to ~/.aba/history/agent-name.json
 
 ## Key Commands
 
-**Running Agents:**
+**Running Agents (CLI):**
 ```bash
 aba                          # Run last used agent (or bootstrap agent-builder)
 aba agent-builder            # Run specific agent
 aba --model gpt-4            # Override model for this session
 aba --no-history             # Disable history for this session
+```
+
+**Running Web Interface:**
+```bash
+source venv/bin/activate     # Activate virtual environment
+python -m aba.web.server     # Start web server on port 8000
+# Or: aba-web (if installed with entry point)
+# Access at: http://localhost:8000
 ```
 
 **Managing Agents:**
@@ -184,6 +225,45 @@ On first run with no agents:
 4. Sets as last-used agent
 5. Runs agent-builder in chat mode
 
+### 5. Web Interface Architecture
+
+The web interface uses async/await for non-blocking streaming:
+
+**Key Differences from CLI:**
+- `AgentSession` (async) vs `AgentRuntime` (sync)
+- `StreamingModel` (async SSE parsing) vs `OpenRouterLanguageModel` (sync)
+- WebSocket streaming vs console I/O
+- Tools run in thread pool (asyncio.to_thread) to avoid blocking
+
+**Streaming Flow:**
+```python
+# In AgentSession.handle_user_message()
+async for chunk in self.model.chat_stream(messages, tools):
+    if chunk["type"] == "content":
+        await websocket.send_json({"type": "stream_chunk", "content": chunk["delta"]})
+    elif chunk["type"] == "tool_calls":
+        # Execute tool (in thread pool if sync)
+        result = await asyncio.to_thread(tool_func, **args)
+        await websocket.send_json({"type": "tool_result", "result": result})
+```
+
+**WebSocket Protocol:**
+- Client sends: `{"type": "message", "content": "user message"}`
+- Server streams: `{"type": "stream_chunk", "content": "..."}`
+- Tool calls: `{"type": "tool_call", "tool": "read_file", "args": {...}}`
+- Tool results: `{"type": "tool_result", "result": "..."}`
+- Complete: `{"type": "stream_complete"}`
+
+**SSE Parsing:**
+The StreamingModel parses Server-Sent Events from OpenRouter:
+```
+data: {"choices": [{"delta": {"content": "Hello"}}]}
+data: {"choices": [{"delta": {"tool_calls": [...]}}]}
+data: [DONE]
+```
+
+Each `data:` line is parsed as JSON and yielded as a chunk.
+
 ## Testing Conventions
 
 - Test files mirror source structure: `tests/test_agent.py` tests `src/aba/agent.py`
@@ -239,6 +319,40 @@ Tests are organized across 6 test files (one per main module)
 - Management commands (list, import, export, delete)
 - Bootstrap triggering
 - Runtime instantiation
+
+**web/server.py**
+- FastAPI application setup
+- REST API endpoints: GET /api/agents, GET /api/agents/{name}
+- WebSocket endpoint: /ws/chat/{agent_name}
+- Serves static React frontend from web/static/
+- CORS middleware for development
+- Main entry point via `main()` function
+
+**web/agent_session.py**
+- `AgentSession` class - async equivalent of AgentRuntime
+- Manages streaming chat with async/await
+- Executes synchronous tools in thread pool (asyncio.to_thread)
+- Handles tool execution loop (max 10 iterations)
+- Saves/loads history on connect/disconnect
+- Uses StreamingModel for OpenRouter SSE streaming
+
+**web/streaming_model.py**
+- `StreamingModel` class - async OpenRouter client with SSE parsing
+- Parses Server-Sent Events from OpenRouter API
+- Yields chunks: content (text), tool_calls (function calls), usage (token stats)
+- Accumulates partial tool calls across chunks
+- 60-second timeout for OpenRouter requests
+- Comprehensive error handling for streaming failures
+
+**web/messages.py**
+- WebSocket protocol message type definitions
+- Message types: message, stream_chunk, tool_call, tool_result, stream_complete, info, error
+- Type hints for client/server communication
+
+**web/static/**
+- Built React frontend (from web-ui/dist/)
+- Served by FastAPI StaticFiles at root URL
+- index.html entry point
 
 ## Configuration
 
@@ -296,6 +410,33 @@ Tests are organized across 6 test files (one per main module)
 3. Update tests in `tests/test_agent.py`
 4. Migration: existing agents will use defaults for new fields
 
+### Working with the Web Interface
+
+**Running the web server:**
+```bash
+source venv/bin/activate
+python -m aba.web.server
+# Access at http://localhost:8000
+```
+
+**Building the React frontend:**
+```bash
+cd web-ui
+npm install
+npm run build  # Output to ../src/aba/web/static/
+```
+
+**Adding a new WebSocket message type:**
+1. Define message structure in `web/messages.py`
+2. Handle in `AgentSession.handle_user_message()` (server)
+3. Send/receive in `useWebSocket.ts` hook (client)
+4. Update `ChatMessage.tsx` if displaying new message type
+
+**Debugging WebSocket issues:**
+- Check browser console for `[WebSocket]` logs
+- Check server logs for connection/message events
+- See `TROUBLESHOOTING.md` for common issues
+
 ## Security Notes
 
 - Agent-builder is the only agent created with elevated capabilities
@@ -330,8 +471,23 @@ pytest tests/test_agent_manager.py -v
 pytest tests/test_runtime.py::test_runtime_initialization -v
 ```
 
+**Web interface issues:**
+```bash
+# Check if server is running
+lsof -i :8000
+
+# View server logs (if running in background)
+# Check browser console for client-side logs
+
+# Rebuild frontend
+cd web-ui && npm run build
+
+# See TROUBLESHOOTING.md for detailed web interface debugging
+```
+
 ## Implementation Notes
 
+**CLI Runtime:**
 - Agents are immutable during runtime (config changes don't persist unless saved)
 - History is saved on runtime exit, not continuously
 - Last-used agent is set on normal exit only (not on Ctrl+C)
@@ -341,3 +497,15 @@ pytest tests/test_runtime.py::test_runtime_initialization -v
 - Messages include last 20 messages (10 exchanges) to avoid context overflow
 - Tool schemas auto-generated from type hints and docstrings via @tool decorator
 - Internal parameters (starting with _) excluded from schemas but auto-injected at runtime
+
+**Web Interface:**
+- Web interface uses async/await throughout (AgentSession, StreamingModel)
+- Synchronous tools run in thread pool via asyncio.to_thread
+- History saved on WebSocket disconnect (not continuously during conversation)
+- OpenRouter SSE streaming parsed manually (Server-Sent Events format)
+- WebSocket sends real-time chunks as they arrive from OpenRouter
+- Tool execution visible to client with tool_call and tool_result messages
+- 60-second timeout for OpenRouter API requests
+- CORS enabled for development (Vite dev server on port 5173)
+- Built frontend served from web/static/ by FastAPI
+- Context tracking via get_context_info tool (added for web UI)

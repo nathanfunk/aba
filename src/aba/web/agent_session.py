@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ from ..capabilities import CAPABILITIES
 from ..tool_schema import ToolSchema
 from ..tools import TOOL_SCHEMAS
 from .streaming_model import StreamingOpenRouterModel
+
+logger = logging.getLogger(__name__)
 
 
 class AgentSession:
@@ -37,6 +40,7 @@ class AgentSession:
             manager: AgentManager for persistence
             websocket: WebSocket connection
         """
+        logger.info(f"Initializing AgentSession for agent '{agent.name}'")
         self.agent = agent
         self.manager = manager
         self.websocket = websocket
@@ -44,6 +48,7 @@ class AgentSession:
         self.history = self._load_history()
         self.model = self._create_model()
         self.current_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        logger.info(f"Session initialized with {len(self.tool_schemas)} tools, {len(self.history)} history items")
 
     def _load_tools(self) -> dict[str, ToolSchema]:
         """Load tool schemas based on agent capabilities.
@@ -169,9 +174,9 @@ class AgentSession:
         """
         try:
             await self.websocket.send_json(message)
-        except Exception:
-            # WebSocket closed or error - silently ignore
-            pass
+        except Exception as e:
+            # WebSocket closed or error
+            logger.warning(f"Failed to send message to WebSocket: {type(e).__name__}: {e}")
 
     async def handle_user_message(self, user_input: str) -> None:
         """Process user message with streaming response.
@@ -185,6 +190,8 @@ class AgentSession:
         Args:
             user_input: User's message
         """
+        logger.info(f"Handling user message (length={len(user_input)})")
+
         # Build messages
         messages = self._build_messages(user_input)
         tools = self._build_tools_array() if self.tool_schemas else None
@@ -195,6 +202,7 @@ class AgentSession:
         # Tool execution loop (max 10 iterations)
         max_iterations = 10
         for iteration in range(max_iterations):
+            logger.debug(f"Tool execution loop iteration {iteration + 1}/{max_iterations}")
             try:
                 # Stream from LLM
                 async for chunk in self.model.chat_stream(messages, tools=tools):
@@ -213,6 +221,7 @@ class AgentSession:
                     elif chunk_type == "tool_calls":
                         # Execute tools
                         tool_calls = chunk["calls"]
+                        logger.info(f"Received {len(tool_calls)} tool calls")
 
                         # Add assistant message with tool calls to messages
                         messages.append({
@@ -230,6 +239,7 @@ class AgentSession:
                             try:
                                 # Parse arguments
                                 tool_args = json.loads(tool_args_str)
+                                logger.info(f"Executing tool: {tool_name} with args: {tool_args}")
 
                                 # Send tool start notification
                                 display_args = {k: v for k, v in tool_args.items() if not k.startswith("_")}
@@ -243,6 +253,7 @@ class AgentSession:
                                 if tool_name not in self.tool_schemas:
                                     result = f"Error: Tool '{tool_name}' not found"
                                     success = False
+                                    logger.error(f"Tool '{tool_name}' not found in available tools")
                                 else:
                                     schema = self.tool_schemas[tool_name]
 
@@ -253,21 +264,26 @@ class AgentSession:
                                         tool_args["_runtime"] = self
 
                                     # Run synchronous tool in thread pool
+                                    logger.debug(f"Running tool {tool_name} in thread pool")
                                     result = await asyncio.to_thread(
                                         schema.function,
                                         **tool_args
                                     )
                                     success = True
+                                    logger.info(f"Tool {tool_name} completed successfully")
 
                             except json.JSONDecodeError as e:
                                 result = f"Error: Invalid JSON arguments: {e}"
                                 success = False
+                                logger.error(f"JSON decode error for tool {tool_name}: {e}")
                             except TypeError as e:
                                 result = f"Error: Invalid arguments: {e}"
                                 success = False
+                                logger.error(f"Type error executing tool {tool_name}: {e}")
                             except Exception as e:
                                 result = f"Error executing tool: {e}"
                                 success = False
+                                logger.error(f"Unexpected error executing tool {tool_name}: {e}", exc_info=True)
 
                             # Send tool result to client
                             await self.send_message({
@@ -292,6 +308,7 @@ class AgentSession:
 
                     elif chunk_type == "done":
                         # Completion - send final messages
+                        logger.info("Stream complete, sending final message")
                         await self.send_message({
                             "type": "stream_chunk",
                             "content": "",
@@ -315,12 +332,14 @@ class AgentSession:
                         self.history.append(("user", user_input))
                         self.history.append(("agent", accumulated_content))
                         self._save_history()
+                        logger.debug(f"History saved (total items: {len(self.history)})")
 
                         # Exit tool execution loop
                         return
 
                     elif chunk_type == "error":
                         # Error occurred
+                        logger.error(f"Error from streaming model: {chunk['message']}")
                         await self.send_message({
                             "type": "error",
                             "message": chunk["message"],
@@ -333,6 +352,7 @@ class AgentSession:
 
             except Exception as e:
                 # Unexpected error
+                logger.error(f"Unexpected error in handle_user_message: {type(e).__name__}: {e}", exc_info=True)
                 await self.send_message({
                     "type": "error",
                     "message": f"Session error: {str(e)}",
@@ -341,6 +361,7 @@ class AgentSession:
                 return
 
         # Max iterations reached
+        logger.warning(f"Tool execution limit reached ({max_iterations} iterations)")
         await self.send_message({
             "type": "error",
             "message": "Tool execution limit reached (10 iterations)",

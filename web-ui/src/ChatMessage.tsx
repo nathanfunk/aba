@@ -12,13 +12,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
     <div
       className={`message ${isUser ? 'user' : isSystem ? 'system' : 'agent'}`}
     >
-      <div className="message-role">
-        {isUser ? '👤 You' : isSystem ? 'ℹ️ System' : '🤖 Agent'}
-      </div>
       <div className="message-content">{message.content}</div>
-      <div className="message-time">
-        {message.timestamp.toLocaleTimeString()}
-      </div>
     </div>
   );
 }

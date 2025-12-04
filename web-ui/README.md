@@ -1,73 +1,197 @@
-# React + TypeScript + Vite
+# ABA Web UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React-based web interface for Agent Builder (aba) with real-time streaming chat.
 
-Currently, two official plugins are available:
+## Overview
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+This is the frontend for the ABA web interface. It provides:
+- Real-time streaming chat with AI agents
+- WebSocket-based communication with the backend
+- Tool execution visualization
+- Agent selection and management
+- Context window tracking
 
-## React Compiler
+## Technology Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **React 18** - UI framework
+- **TypeScript** - Type safety
+- **Vite** - Build tool and dev server
+- **WebSocket API** - Real-time communication
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### Setup
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+```bash
+# Install dependencies
+npm install
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Start development server (runs on http://localhost:5173)
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The dev server will proxy WebSocket connections to the backend (assumed to be running on port 8000).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Building for Production
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+# Build optimized production bundle
+npm run build
+
+# Output goes to ../src/aba/web/static/
 ```
+
+The build output is served by the FastAPI backend at http://localhost:8000.
+
+## Project Structure
+
+```
+src/
+├── App.tsx              # Main application component
+│                        # - Agent selection
+│                        # - Chat interface
+│                        # - WebSocket connection management
+├── ChatMessage.tsx      # Message display component
+│                        # - User messages
+│                        # - Assistant messages
+│                        # - Tool calls and results
+│                        # - System messages
+├── useWebSocket.ts      # WebSocket hook
+│                        # - Connection management
+│                        # - Message parsing
+│                        # - Streaming chunk accumulation
+│                        # - Auto-reconnect
+├── App.css              # Styles
+├── main.tsx             # Entry point
+└── vite-env.d.ts        # Type definitions
+```
+
+## WebSocket Protocol
+
+The UI communicates with the backend using WebSocket messages:
+
+### Client → Server
+
+```typescript
+{
+  type: "message",
+  content: string  // User's message
+}
+```
+
+### Server → Client
+
+**Text streaming:**
+```typescript
+{
+  type: "stream_chunk",
+  content: string  // Partial response
+}
+```
+
+**Tool calls:**
+```typescript
+{
+  type: "tool_call",
+  tool: string,    // Tool name
+  args: object     // Tool arguments
+}
+```
+
+**Tool results:**
+```typescript
+{
+  type: "tool_result",
+  result: string   // Tool output
+}
+```
+
+**Stream complete:**
+```typescript
+{
+  type: "stream_complete"
+}
+```
+
+**Info/Error messages:**
+```typescript
+{
+  type: "info" | "error",
+  content: string
+}
+```
+
+## Key Features
+
+### Real-time Streaming
+
+Responses stream character-by-character as they're generated by the LLM, providing immediate feedback to the user.
+
+### Tool Execution Visibility
+
+When the agent uses tools (like reading files or executing code), the UI shows:
+1. The tool being called with its arguments
+2. The tool's result
+3. The agent's response incorporating the tool result
+
+### Context Tracking
+
+The UI displays token usage and context window status, helping users understand how much of the context window is being used.
+
+### Auto-reconnect
+
+If the WebSocket connection is lost, the UI automatically attempts to reconnect.
+
+## Development Tips
+
+### Running Backend and Frontend
+
+```bash
+# Terminal 1: Backend
+source venv/bin/activate
+python -m aba.web.server
+
+# Terminal 2: Frontend dev server
+cd web-ui
+npm run dev
+```
+
+Access the dev UI at http://localhost:5173. It will connect to the backend at http://localhost:8000.
+
+### Debugging WebSocket Messages
+
+The `useWebSocket` hook logs all WebSocket events to the browser console with the `[WebSocket]` prefix. Check the console to debug connection or message issues.
+
+### Testing Tool Execution
+
+Try asking the agent to use tools:
+- "What files are in the current directory?" (uses list_files)
+- "Read the README.md file" (uses read_file)
+- "Create a new file called test.txt" (uses write_file)
+
+## Building for Production
+
+After building with `npm run build`, the static files are served by the FastAPI backend. To deploy:
+
+1. Build the frontend: `npm run build`
+2. Commit the built files in `../src/aba/web/static/`
+3. Start the backend: `python -m aba.web.server`
+4. Access the UI at http://localhost:8000
+
+## Linting
+
+```bash
+npm run lint  # Run ESLint
+```
+
+## Contributing
+
+When making changes to the UI:
+1. Test in dev mode (`npm run dev`)
+2. Build for production (`npm run build`)
+3. Test the built version (access via backend at port 8000)
+4. Commit both source changes and built files
+
+## Troubleshooting
+
+See [../TROUBLESHOOTING.md](../TROUBLESHOOTING.md) for common issues and solutions.

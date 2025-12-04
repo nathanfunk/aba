@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import AsyncIterator, Any
 from dataclasses import dataclass
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -42,8 +45,11 @@ class StreamingOpenRouterModel:
             - {"type": "done", "usage": {...}} - Completion with usage stats
             - {"type": "error", "message": str} - Error occurred
         """
+        logger.info(f"Starting chat stream with model={self.model}, tools={'yes' if tools else 'no'}")
+
         api_key = os.getenv(self.api_key_env)
         if not api_key:
+            logger.error(f"API key not found in environment variable {self.api_key_env}")
             yield {
                 "type": "error",
                 "message": f"OpenRouter API key not found. Set {self.api_key_env} environment variable."
@@ -67,6 +73,7 @@ class StreamingOpenRouterModel:
         tool_calls_accumulator: dict[int, dict[str, Any]] = {}
 
         try:
+            logger.debug(f"Sending request to OpenRouter API with {len(messages)} messages")
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 async with client.stream(
                     "POST",
@@ -82,11 +89,14 @@ class StreamingOpenRouterModel:
                     # Check for HTTP errors
                     if response.status_code != 200:
                         error_text = await response.aread()
+                        logger.error(f"OpenRouter API error: status={response.status_code}, body={error_text.decode()}")
                         yield {
                             "type": "error",
                             "message": f"OpenRouter API error ({response.status_code}): {error_text.decode()}"
                         }
                         return
+
+                    logger.debug("Successfully connected to OpenRouter streaming API")
 
                     # Parse SSE stream
                     async for line in response.aiter_lines():
@@ -113,9 +123,11 @@ class StreamingOpenRouterModel:
 
                             # Check for error in chunk
                             if "error" in chunk:
+                                error_msg = chunk["error"].get("message", "Unknown error")
+                                logger.error(f"Error in streaming chunk: {error_msg}")
                                 yield {
                                     "type": "error",
-                                    "message": chunk["error"].get("message", "Unknown error")
+                                    "message": error_msg
                                 }
                                 return
 
@@ -164,12 +176,14 @@ class StreamingOpenRouterModel:
 
                                 # Handle completion
                                 if finish_reason:
+                                    logger.debug(f"Stream finished with reason: {finish_reason}")
                                     if finish_reason == "tool_calls":
                                         # Yield accumulated tool calls
                                         calls = [
                                             tool_calls_accumulator[i]
                                             for i in sorted(tool_calls_accumulator.keys())
                                         ]
+                                        logger.info(f"Yielding {len(calls)} tool calls")
                                         yield {
                                             "type": "tool_calls",
                                             "calls": calls
@@ -178,12 +192,14 @@ class StreamingOpenRouterModel:
                                     # Check for usage stats
                                     usage = chunk.get("usage")
                                     if usage:
+                                        logger.info(f"Stream complete. Usage: {usage.get('total_tokens', 0)} tokens")
                                         yield {
                                             "type": "done",
                                             "finish_reason": finish_reason,
                                             "usage": usage
                                         }
                                     else:
+                                        logger.info("Stream complete (no usage stats)")
                                         yield {
                                             "type": "done",
                                             "finish_reason": finish_reason,
@@ -202,12 +218,20 @@ class StreamingOpenRouterModel:
                                 }
                                 continue
 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
+            logger.error(f"OpenRouter request timed out after {self.timeout} seconds: {e}")
             yield {
                 "type": "error",
-                "message": "Request timed out after 60 seconds"
+                "message": f"Request timed out after {self.timeout} seconds"
+            }
+        except httpx.RemoteProtocolError as e:
+            logger.error(f"Remote protocol error (connection closed): {e}")
+            yield {
+                "type": "error",
+                "message": f"Connection error: {str(e)}"
             }
         except Exception as e:
+            logger.error(f"Unexpected streaming error: {type(e).__name__}: {e}", exc_info=True)
             yield {
                 "type": "error",
                 "message": f"Streaming error: {str(e)}"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from ..agent_manager import AgentManager
 from .agent_session import AgentSession
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -128,13 +131,18 @@ async def websocket_chat(websocket: WebSocket, agent_name: str):
         websocket: WebSocket connection
         agent_name: Name of the agent to chat with
     """
+    client_host = websocket.client.host if websocket.client else "unknown"
+    logger.info(f"WebSocket connection request from {client_host} for agent '{agent_name}'")
+
     await websocket.accept()
+    logger.info(f"WebSocket connection accepted for agent '{agent_name}'")
 
     try:
         # Load agent
         manager = AgentManager()
 
         if not manager.agent_exists(agent_name):
+            logger.warning(f"Agent '{agent_name}' not found")
             await websocket.send_json({
                 "type": "error",
                 "message": f"Agent '{agent_name}' not found",
@@ -144,30 +152,30 @@ async def websocket_chat(websocket: WebSocket, agent_name: str):
             return
 
         agent = manager.load_agent(agent_name)
+        logger.info(f"Loaded agent '{agent_name}' with {len(agent.capabilities)} capabilities")
 
         # Create session
         session = AgentSession(agent, manager, websocket)
-
-        # Send initial info
-        await websocket.send_json({
-            "type": "info",
-            "message": f"Connected to agent: {agent.name}",
-            "capabilities": agent.capabilities,
-            "tools": list(session.tool_schemas.keys())
-        })
+        logger.debug(f"Session created for agent '{agent_name}' with {len(session.tool_schemas)} tools")
 
         # Message loop
+        message_count = 0
         while True:
             # Receive message
             data = await websocket.receive_json()
+            message_count += 1
 
             message_type = data.get("type")
+            logger.debug(f"Received message #{message_count} type='{message_type}' from client")
 
             if message_type == "user_message":
                 content = data.get("content", "")
+                logger.info(f"Processing user message #{message_count} (length={len(content)})")
                 await session.handle_user_message(content)
+                logger.info(f"Completed user message #{message_count}")
 
             elif message_type == "clear_history":
+                logger.info("Clearing chat history")
                 session.clear_history()
                 await websocket.send_json({
                     "type": "info",
@@ -175,6 +183,7 @@ async def websocket_chat(websocket: WebSocket, agent_name: str):
                 })
 
             elif message_type == "get_capabilities":
+                logger.debug("Sending capabilities info")
                 await websocket.send_json({
                     "type": "info",
                     "capabilities": agent.capabilities,
@@ -182,29 +191,33 @@ async def websocket_chat(websocket: WebSocket, agent_name: str):
                 })
 
             else:
+                logger.warning(f"Unknown message type: {message_type}")
                 await websocket.send_json({
                     "type": "error",
                     "message": f"Unknown message type: {message_type}",
                     "recoverable": True
                 })
 
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as e:
         # Client disconnected - save history
+        logger.info(f"Client disconnected from agent '{agent_name}' (code={e.code}, reason={e.reason})")
         try:
             session._save_history()
             manager.set_last_agent(agent_name)
-        except:
-            pass
+            logger.debug(f"History saved and last agent updated for '{agent_name}'")
+        except Exception as save_error:
+            logger.error(f"Error saving history on disconnect: {save_error}")
     except Exception as e:
         # Send error to client if still connected
+        logger.error(f"Unexpected error in WebSocket handler: {type(e).__name__}: {e}", exc_info=True)
         try:
             await websocket.send_json({
                 "type": "error",
                 "message": f"Server error: {str(e)}",
                 "recoverable": False
             })
-        except:
-            pass
+        except Exception as send_error:
+            logger.error(f"Failed to send error message to client: {send_error}")
 
 
 # Serve static files (built React app)
@@ -218,6 +231,13 @@ if static_dir.exists():
 def main():
     """Entry point for aba-web command."""
     import uvicorn
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
     # Check if frontend is built
     static_dir = Path(__file__).parent / "static"
@@ -233,7 +253,10 @@ def main():
     print("📍 Server running at: http://localhost:8000")
     print("📡 WebSocket endpoint: ws://localhost:8000/ws/chat/{agent_name}")
     print("📚 API docs: http://localhost:8000/docs")
+    print("📝 Logging level: INFO")
     print("\nPress Ctrl+C to stop\n")
+
+    logger.info("Starting ABA Web Interface server")
 
     uvicorn.run(
         "aba.web.server:app",
