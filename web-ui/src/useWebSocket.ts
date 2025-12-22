@@ -4,6 +4,7 @@ export interface Message {
   role: 'user' | 'agent' | 'system';
   content: string;
   timestamp: Date;
+  tools?: ToolCall[];
 }
 
 export interface ToolCall {
@@ -33,7 +34,6 @@ export function useWebSocket(agentName: string) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [currentToolCalls, setCurrentToolCalls] = useState<ToolCall[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const currentMessageRef = useRef<string>('');
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -81,14 +81,19 @@ export function useWebSocket(agentName: string) {
           if (data.content) {
             currentMessageRef.current += data.content;
             setMessages((prev) => {
-              const newMessages = [...prev];
-              const lastMsg = newMessages[newMessages.length - 1];
+              const lastMsg = prev[prev.length - 1];
               if (lastMsg && lastMsg.role === 'agent') {
-                lastMsg.content = currentMessageRef.current;
-                return [...newMessages];
+                // Create new message object (don't mutate)
+                return [
+                  ...prev.slice(0, -1),
+                  {
+                    ...lastMsg,
+                    content: currentMessageRef.current,
+                  },
+                ];
               } else {
                 return [
-                  ...newMessages,
+                  ...prev,
                   {
                     role: 'agent',
                     content: currentMessageRef.current,
@@ -102,36 +107,87 @@ export function useWebSocket(agentName: string) {
           if (data.is_complete) {
             console.log('[WebSocket] Stream complete');
             setIsStreaming(false);
-            currentMessageRef.current = '';
+            // Don't clear currentMessageRef here - it will be cleared when next message starts
+            // This prevents race condition where the final message might be lost
           }
           break;
 
         case 'tool_start':
           console.log(`[WebSocket] Tool starting: ${data.tool_name}`, data.arguments);
-          setCurrentToolCalls((prev) => [
-            ...prev,
-            {
-              name: data.tool_name || 'unknown',
-              arguments: data.arguments || {},
-            },
-          ]);
+          // Finalize current text message if any, then add tool as separate message
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+
+            // If currently building an agent message, we'll add the tool to it
+            // Otherwise create a new message for the tool
+            if (lastMsg && lastMsg.role === 'agent') {
+              const existingTools = lastMsg.tools || [];
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...lastMsg,
+                  tools: [
+                    ...existingTools,
+                    {
+                      name: data.tool_name || 'unknown',
+                      arguments: data.arguments || {},
+                    },
+                  ],
+                },
+              ];
+            } else {
+              // No agent message yet, create one just for the tool
+              return [
+                ...prev,
+                {
+                  role: 'agent',
+                  content: '',
+                  timestamp: new Date(),
+                  tools: [
+                    {
+                      name: data.tool_name || 'unknown',
+                      arguments: data.arguments || {},
+                    },
+                  ],
+                },
+              ];
+            }
+          });
+          // Reset current message ref so next stream_chunk creates a new message
+          currentMessageRef.current = '';
           break;
 
         case 'tool_result':
           console.log(`[WebSocket] Tool result: ${data.tool_name} (success=${data.success})`);
-          setCurrentToolCalls((prev) =>
-            prev.map((tool) =>
-              tool.name === data.tool_name
-                ? { ...tool, result: data.result, success: data.success }
-                : tool
-            )
-          );
+          // Find and update the tool result in the most recent message with this tool
+          setMessages((prev) => {
+            // Search backwards for the message containing this tool
+            for (let i = prev.length - 1; i >= 0; i--) {
+              const msg = prev[i];
+              if (msg.tools && msg.tools.some(t => t.name === data.tool_name && !t.result)) {
+                return [
+                  ...prev.slice(0, i),
+                  {
+                    ...msg,
+                    tools: msg.tools.map((tool) =>
+                      tool.name === data.tool_name && !tool.result
+                        ? { ...tool, result: data.result, success: data.success }
+                        : tool
+                    ),
+                  },
+                  ...prev.slice(i + 1),
+                ];
+              }
+            }
+            return prev;
+          });
           break;
 
         case 'agent_message':
           console.log('[WebSocket] Agent message complete');
           setIsStreaming(false);
-          setCurrentToolCalls([]);
+          // Tool calls are already attached via tool_start/tool_result
+          // No need to do anything here
           break;
 
         case 'error':
@@ -230,11 +286,17 @@ export function useWebSocket(agentName: string) {
     }
   }, [isConnected]);
 
+  const clearMessages = useCallback(() => {
+    setMessages([]);
+    currentMessageRef.current = '';
+    setIsStreaming(false);
+  }, []);
+
   return {
     messages,
     isConnected,
     isStreaming,
-    currentToolCalls,
     sendMessage,
+    clearMessages,
   };
 }

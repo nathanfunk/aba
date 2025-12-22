@@ -12,7 +12,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
     <div
       className={`message ${isUser ? 'user' : isSystem ? 'system' : 'agent'}`}
     >
-      <div className="message-content">{message.content}</div>
+      {message.tools && message.tools.length > 0 && (
+        <ToolCallDisplay tools={message.tools} />
+      )}
+      {message.content && <div className="message-content">{message.content}</div>}
     </div>
   );
 }
@@ -29,6 +32,18 @@ export function ToolCallDisplay({ tools }: ToolCallDisplayProps) {
       {tools.map((tool, idx) => (
         <div key={idx} className="tool-call">
           <div className="tool-name">🔧 {tool.name}</div>
+          {Object.keys(tool.arguments).length > 0 && (
+            <div className="tool-arguments">
+              {Object.entries(tool.arguments).map(([key, value]) => (
+                <div key={key} className="tool-arg">
+                  <span className="arg-name">{key}:</span>{' '}
+                  <span className="arg-value">
+                    {typeof value === 'string' ? value : JSON.stringify(value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           {tool.result !== undefined && (
             <div className={`tool-result ${tool.success ? 'success' : 'error'}`}>
               {tool.success ? '✓' : '✗'} {tool.result.substring(0, 100)}

@@ -24,7 +24,7 @@ CAPABILITIES = {
     "agent-creation": Capability(
         name="agent-creation",
         description="Create and modify agent definitions",
-        tools=["create_agent", "modify_agent", "delete_agent", "list_agents"],
+        tools=["create_agent", "modify_agent", "delete_agent", "list_agents", "get_agent_details"],
         system_prompt_addition=(
             "You can create new agents by specifying their name, description, and capabilities. "
             "New agents should have minimal capabilities by default - only add what they truly need. "

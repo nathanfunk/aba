@@ -93,11 +93,12 @@ class AgentRuntime:
             temperature=self.agent.config.get("temperature", 0.7)
         )
 
-    def _load_history(self) -> list[tuple[str, str]]:
-        """Load chat history if preserve_history is enabled.
+    def _load_history(self) -> list[tuple[str, str, dict]]:
+        """Load chat history with tool call metadata.
 
         Returns:
-            List of (role, message) tuples
+            List of (role, message, metadata) tuples where metadata contains
+            tool_calls and usage info
         """
         if not self.agent.config.get("preserve_history", True):
             return []
@@ -107,22 +108,69 @@ class AgentRuntime:
             try:
                 with open(history_file) as f:
                     data = json.load(f)
-                    return [(item["role"], item["message"]) for item in data]
+                    result = []
+                    for item in data:
+                        role = item["role"]
+                        message = item["message"]
+                        # Support both old and new formats
+                        metadata = {
+                            "tool_calls": item.get("tool_calls", []),
+                            "usage": item.get("usage", {})
+                        }
+                        result.append((role, message, metadata))
+                    return result
             except Exception:
                 return []
 
         return []
 
     def _save_history(self) -> None:
-        """Save chat history to file."""
+        """Save chat history with tool call metadata."""
         if not self.agent.config.get("preserve_history", True):
             return
 
         history_file = self.manager.history_dir / f"{self.agent.name}.json"
-        data = [{"role": role, "message": msg} for role, msg in self.history]
+        data = []
+        for role, msg, metadata in self.history:
+            entry = {"role": role, "message": msg}
+            # Only include metadata fields if they have content
+            if metadata.get("tool_calls"):
+                entry["tool_calls"] = metadata["tool_calls"]
+            if metadata.get("usage"):
+                entry["usage"] = metadata["usage"]
+            data.append(entry)
 
         with open(history_file, 'w') as f:
             json.dump(data, f, indent=2)
+
+    def _format_tool_calls_for_context(self, tool_calls: list[dict]) -> str:
+        """Format tool calls for inclusion in LLM context.
+
+        Args:
+            tool_calls: List of tool call dicts with tool_name, arguments, result, success
+
+        Returns:
+            Formatted string showing tools used
+        """
+        if not tool_calls:
+            return ""
+
+        lines = ["[Tools used:"]
+        for tc in tool_calls:
+            # Format arguments
+            args_str = ", ".join(f"{k}={repr(v)}" for k, v in tc["arguments"].items())
+
+            # Preview result (truncate to 100 chars)
+            result_preview = tc["result"][:100]
+            if len(tc["result"]) > 100:
+                result_preview += "..."
+
+            # Status
+            status = "success" if tc["success"] else "error"
+
+            lines.append(f"  {tc['tool_name']}({args_str}) → {status}: {result_preview}]")
+
+        return "\n".join(lines) + "]"
 
     def run(self) -> None:
         """Main chat loop."""
@@ -161,12 +209,19 @@ class AgentRuntime:
                 self._handle_command(user_input)
                 continue
 
-            self.history.append(("user", user_input))
+            self.history.append(("user", user_input, {}))
 
             try:
                 response = self._generate_response(user_input)
                 print(f"{self.agent.name}: {response}\n")
-                self.history.append(("agent", response))
+                # Add metadata with tool calls and usage
+                metadata = {
+                    "tool_calls": getattr(self, '_current_tool_calls', []),
+                    "usage": self.current_usage
+                }
+                self.history.append(("agent", response, metadata))
+                # Reset for next turn
+                self._current_tool_calls = []
 
                 # Display token usage
                 self._display_usage_info()
@@ -247,7 +302,7 @@ class AgentRuntime:
             print("⚠️  Context usage is high. You may want to clear history soon.")
 
     def _generate_response(self, user_input: str) -> str:
-        """Generate response using function calling.
+        """Generate response using function calling with tool tracking.
 
         Args:
             user_input: User's message
@@ -255,6 +310,9 @@ class AgentRuntime:
         Returns:
             Agent's final response
         """
+        # Track all tool calls in this response for history
+        accumulated_tool_calls = []
+
         # Build messages array for chat API
         messages = []
 
@@ -264,9 +322,16 @@ class AgentRuntime:
             messages.append({"role": "system", "content": system_prompt})
 
         # Add conversation history (last 10 exchanges to avoid context overflow)
-        for role, message in self.history[-20:]:
+        for role, message, metadata in self.history[-20:]:
             api_role = "user" if role == "user" else "assistant"
-            messages.append({"role": api_role, "content": message})
+
+            # For agent messages with tool calls, append tool summary to content
+            content = message
+            if role == "agent" and metadata.get("tool_calls"):
+                tool_summary = self._format_tool_calls_for_context(metadata["tool_calls"])
+                content = f"{message}\n\n{tool_summary}"
+
+            messages.append({"role": api_role, "content": content})
 
         # Add current user input
         messages.append({"role": "user", "content": user_input})
@@ -288,6 +353,8 @@ class AgentRuntime:
 
             if not tool_calls:
                 # No tool calls - return final answer
+                # Store tool calls for history (even if empty this iteration)
+                self._current_tool_calls = accumulated_tool_calls
                 content = response.get("content")
                 if content:
                     return content
@@ -349,6 +416,16 @@ class AgentRuntime:
                     result = f"Error executing tool: {e}"
                     print(f"   Result: {result}\n")
 
+                # Record tool call details for history
+                result_str = str(result)
+                accumulated_tool_calls.append({
+                    "tool_name": tool_name,
+                    "arguments": display_args,  # Already filtered from _manager/_runtime
+                    "result": result_str[:1000],  # Truncate long results
+                    "success": not result_str.startswith("Error"),
+                    "result_length": len(result_str)
+                })
+
                 # Add tool result to messages
                 messages.append({
                     "role": "tool",
@@ -358,5 +435,6 @@ class AgentRuntime:
 
             # Continue loop to get next response
 
-        # Max iterations reached
+        # Max iterations reached - store tool calls even though we're erroring out
+        self._current_tool_calls = accumulated_tool_calls
         return "(Tool execution limit reached - please try a simpler request)"

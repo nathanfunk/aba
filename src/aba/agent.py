@@ -48,13 +48,19 @@ class Agent:
     @classmethod
     def from_dict(cls, data: dict) -> Agent:
         """Deserialize agent from dictionary."""
+        # Handle capabilities - support both list and legacy string format
+        capabilities = data.get("capabilities", [])
+        if isinstance(capabilities, str):
+            # Legacy format: "cap1,cap2,cap3" -> ["cap1", "cap2", "cap3"]
+            capabilities = [c.strip() for c in capabilities.split(",")] if capabilities else []
+
         return cls(
             name=data["name"],
             description=data["description"],
             version=data.get("version", "1.0"),
             created=data.get("created", datetime.now().isoformat()),
             last_used=data.get("last_used", datetime.now().isoformat()),
-            capabilities=data.get("capabilities", []),
+            capabilities=capabilities,
             system_prompt=data.get("system_prompt", ""),
             config=data.get("config", {
                 "model": "openai/gpt-4o-mini",

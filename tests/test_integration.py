@@ -98,10 +98,10 @@ def test_history_persistence_workflow(tmp_path):
     )
     manager.save_agent(agent)
 
-    # Session 1: Create runtime and add history
+    # Session 1: Create runtime and add history (new 3-tuple format)
     runtime1 = AgentRuntime(agent, manager)
-    runtime1.history.append(("user", "Hello"))
-    runtime1.history.append(("agent", "Hi there!"))
+    runtime1.history.append(("user", "Hello", {}))
+    runtime1.history.append(("agent", "Hi there!", {}))
     runtime1._save_history()
 
     # Session 2: Create new runtime, history should be loaded
@@ -109,8 +109,8 @@ def test_history_persistence_workflow(tmp_path):
     runtime2 = AgentRuntime(agent2, manager)
 
     assert len(runtime2.history) == 2
-    assert runtime2.history[0] == ("user", "Hello")
-    assert runtime2.history[1] == ("agent", "Hi there!")
+    assert runtime2.history[0] == ("user", "Hello", {"tool_calls": [], "usage": {}})
+    assert runtime2.history[1] == ("agent", "Hi there!", {"tool_calls": [], "usage": {}})
 
 
 def test_export_import_workflow(tmp_path):

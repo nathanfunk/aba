@@ -84,11 +84,12 @@ class AgentSession:
             temperature=self.agent.config.get("temperature", 0.7)
         )
 
-    def _load_history(self) -> list[tuple[str, str]]:
-        """Load chat history if preserve_history is enabled.
+    def _load_history(self) -> list[tuple[str, str, dict]]:
+        """Load chat history with tool call metadata.
 
         Returns:
-            List of (role, message) tuples
+            List of (role, message, metadata) tuples where metadata contains
+            tool_calls and usage info
         """
         if not self.agent.config.get("preserve_history", True):
             return []
@@ -98,22 +99,69 @@ class AgentSession:
             try:
                 with open(history_file) as f:
                     data = json.load(f)
-                    return [(item["role"], item["message"]) for item in data]
+                    result = []
+                    for item in data:
+                        role = item["role"]
+                        message = item["message"]
+                        # Support both old and new formats
+                        metadata = {
+                            "tool_calls": item.get("tool_calls", []),
+                            "usage": item.get("usage", {})
+                        }
+                        result.append((role, message, metadata))
+                    return result
             except Exception:
                 return []
 
         return []
 
     def _save_history(self) -> None:
-        """Save chat history to file."""
+        """Save chat history with tool call metadata."""
         if not self.agent.config.get("preserve_history", True):
             return
 
         history_file = self.manager.history_dir / f"{self.agent.name}.json"
-        data = [{"role": role, "message": msg} for role, msg in self.history]
+        data = []
+        for role, msg, metadata in self.history:
+            entry = {"role": role, "message": msg}
+            # Only include metadata fields if they have content
+            if metadata.get("tool_calls"):
+                entry["tool_calls"] = metadata["tool_calls"]
+            if metadata.get("usage"):
+                entry["usage"] = metadata["usage"]
+            data.append(entry)
 
         with open(history_file, 'w') as f:
             json.dump(data, f, indent=2)
+
+    def _format_tool_calls_for_context(self, tool_calls: list[dict]) -> str:
+        """Format tool calls for inclusion in LLM context.
+
+        Args:
+            tool_calls: List of tool call dicts with tool_name, arguments, result, success
+
+        Returns:
+            Formatted string showing tools used
+        """
+        if not tool_calls:
+            return ""
+
+        lines = ["[Tools used:"]
+        for tc in tool_calls:
+            # Format arguments
+            args_str = ", ".join(f"{k}={repr(v)}" for k, v in tc["arguments"].items())
+
+            # Preview result (truncate to 100 chars)
+            result_preview = tc["result"][:100]
+            if len(tc["result"]) > 100:
+                result_preview += "..."
+
+            # Status
+            status = "success" if tc["success"] else "error"
+
+            lines.append(f"  {tc['tool_name']}({args_str}) → {status}: {result_preview}]")
+
+        return "\n".join(lines) + "]"
 
     def _build_system_prompt(self) -> str:
         """Build system prompt from agent's base prompt plus capability additions.
@@ -157,9 +205,16 @@ class AgentSession:
             messages.append({"role": "system", "content": system_prompt})
 
         # Add history (last 10 exchanges = 20 messages)
-        for role, message in self.history[-20:]:
+        for role, message, metadata in self.history[-20:]:
             api_role = "user" if role == "user" else "assistant"
-            messages.append({"role": api_role, "content": message})
+
+            # For agent messages with tool calls, append tool summary to content
+            content = message
+            if role == "agent" and metadata.get("tool_calls"):
+                tool_summary = self._format_tool_calls_for_context(metadata["tool_calls"])
+                content = f"{message}\n\n{tool_summary}"
+
+            messages.append({"role": api_role, "content": content})
 
         # Add current user input
         messages.append({"role": "user", "content": user_input})
@@ -196,8 +251,9 @@ class AgentSession:
         messages = self._build_messages(user_input)
         tools = self._build_tools_array() if self.tool_schemas else None
 
-        # Track accumulated content for history
+        # Track accumulated content and tool calls for history
         accumulated_content = ""
+        accumulated_tool_calls = []
 
         # Tool execution loop (max 10 iterations)
         max_iterations = 10
@@ -293,6 +349,16 @@ class AgentSession:
                                 "success": success
                             })
 
+                            # Record tool call details for history
+                            result_str = str(result)
+                            accumulated_tool_calls.append({
+                                "tool_name": tool_name,
+                                "arguments": display_args,  # Already filtered from _manager/_runtime
+                                "result": result_str[:1000],  # Truncate long results
+                                "success": not result_str.startswith("Error"),
+                                "result_length": len(result_str)
+                            })
+
                             # Add tool result to messages
                             messages.append({
                                 "role": "tool",
@@ -328,9 +394,13 @@ class AgentSession:
                             "usage": usage
                         })
 
-                        # Save to history
-                        self.history.append(("user", user_input))
-                        self.history.append(("agent", accumulated_content))
+                        # Save to history with metadata
+                        self.history.append(("user", user_input, {}))
+                        metadata = {
+                            "tool_calls": accumulated_tool_calls,
+                            "usage": usage
+                        }
+                        self.history.append(("agent", accumulated_content, metadata))
                         self._save_history()
                         logger.debug(f"History saved (total items: {len(self.history)})")
 

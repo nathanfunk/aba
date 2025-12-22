@@ -71,13 +71,13 @@ def test_runtime_builds_system_prompt(tmp_path):
 
 
 def test_runtime_loads_history(tmp_path):
-    """Test that runtime loads saved history."""
+    """Test that runtime loads saved history with backward compatibility."""
     manager = AgentManager(base_path=tmp_path)
 
     agent = Agent(name="test-agent", description="Test")
     manager.save_agent(agent)
 
-    # Save some history
+    # Save old format history (without metadata)
     history_file = manager.history_dir / "test-agent.json"
     import json
     history_data = [
@@ -87,24 +87,24 @@ def test_runtime_loads_history(tmp_path):
     with open(history_file, 'w') as f:
         json.dump(history_data, f)
 
-    # Load runtime
+    # Load runtime - should convert to 3-tuple with empty metadata
     runtime = AgentRuntime(agent, manager)
 
     assert len(runtime.history) == 2
-    assert runtime.history[0] == ("user", "Hello")
-    assert runtime.history[1] == ("agent", "Hi there!")
+    assert runtime.history[0] == ("user", "Hello", {"tool_calls": [], "usage": {}})
+    assert runtime.history[1] == ("agent", "Hi there!", {"tool_calls": [], "usage": {}})
 
 
 def test_runtime_saves_history(tmp_path):
-    """Test that runtime saves history on exit."""
+    """Test that runtime saves history with metadata."""
     manager = AgentManager(base_path=tmp_path)
 
     agent = Agent(name="test-agent", description="Test")
     runtime = AgentRuntime(agent, manager)
 
-    # Add some history
-    runtime.history.append(("user", "Test message"))
-    runtime.history.append(("agent", "Test response"))
+    # Add some history (new 3-tuple format)
+    runtime.history.append(("user", "Test message", {}))
+    runtime.history.append(("agent", "Test response", {}))
 
     # Save history
     runtime._save_history()
@@ -121,6 +121,9 @@ def test_runtime_saves_history(tmp_path):
     assert len(data) == 2
     assert data[0]["role"] == "user"
     assert data[0]["message"] == "Test message"
+    # Should not include empty metadata fields
+    assert "tool_calls" not in data[0]
+    assert "usage" not in data[0]
 
 
 def test_runtime_respects_no_history_config(tmp_path):

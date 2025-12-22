@@ -34,6 +34,55 @@
   color: #ef4444;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.agent-selector {
+  padding: 0.5rem 1rem;
+  background: #1a1a1a;
+  border: 1px solid #404040;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  min-width: 150px;
+}
+
+.agent-selector:hover:not(:disabled) {
+  border-color: #2563eb;
+}
+
+.agent-selector:focus {
+  outline: none;
+  border-color: #2563eb;
+}
+
+.agent-selector:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.agent-selector.loading,
+.agent-selector.error {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  color: #94a3b8;
+  border: none;
+}
+
+.agent-selector.error {
+  color: #ef4444;
+}
+
+.switching {
+  color: #f59e0b;
+}
+
 .messages-container {
   flex: 1;
   overflow-y: auto;
@@ -88,7 +137,7 @@
   background: #422006;
   border-radius: 8px;
   max-width: 80%;
-  align-self: flex-start;
+  margin-bottom: 0.75rem;
 }
 
 .tool-call {
@@ -100,6 +149,32 @@
 .tool-name {
   font-weight: bold;
   font-size: 0.9rem;
+}
+
+.tool-arguments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.tool-arg {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.arg-name {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.arg-value {
+  color: #e5e7eb;
+  font-family: 'Courier New', monospace;
+  word-break: break-all;
 }
 
 .tool-result {

@@ -205,3 +205,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Web frontend build artifacts
+src/aba/web/static/assets/
+src/aba/web/static/index.html
+src/aba/web/static/vite.svg
+
+# Node.js
+web-ui/node_modules/
+web-ui/dist/

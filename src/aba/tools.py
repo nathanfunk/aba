@@ -56,15 +56,19 @@ def create_agent(
 
 @tool
 def modify_agent(name: str, _manager: AgentManager | None = None, **updates: Any) -> str:
-    """Modify an existing agent.
+    """Modify an existing agent's properties.
 
     Args:
         name: Agent name to modify
         _manager: AgentManager instance (for testing, uses default if None)
-        **updates: Fields to update (description, capabilities, system_prompt, etc.)
+        **updates: Fields to update. Supported fields:
+            - description: Update agent description
+            - capabilities: Update capability list (replaces existing)
+            - system_prompt: Update system prompt
+            - config: Update configuration (merges with existing)
 
     Returns:
-        Success message
+        Success message confirming the update
     """
     manager = _manager or AgentManager()
 
@@ -142,14 +146,76 @@ def list_agents(_manager: AgentManager | None = None) -> str:
 
 
 @tool
-def read_file(path: str) -> str:
-    """Read contents of a file.
+def get_agent_details(name: str, _manager: AgentManager | None = None) -> str:
+    """Get detailed information about a specific agent.
 
     Args:
-        path: Path to file to read
+        name: Name of the agent to get details for
+        _manager: AgentManager instance (for testing, uses default if None)
 
     Returns:
-        File contents
+        Formatted agent details including capabilities and configuration
+    """
+    manager = _manager or AgentManager()
+
+    try:
+        agent = manager.load_agent(name)
+    except FileNotFoundError:
+        return f"Error: Agent '{name}' not found"
+    except Exception as e:
+        return f"Error loading agent '{name}': {e}"
+
+    lines = [
+        f"Agent: {agent.name}",
+        f"Description: {agent.description}",
+        f"Created: {agent.created}",
+        f"Last used: {agent.last_used}",
+        f"Version: {agent.version}",
+        "",
+        "Capabilities:",
+    ]
+
+    if agent.capabilities:
+        for cap in agent.capabilities:
+            lines.append(f"  - {cap}")
+    else:
+        lines.append("  (none - chat only)")
+
+    lines.append("")
+    lines.append("Configuration:")
+    if agent.config:
+        for key, value in agent.config.items():
+            lines.append(f"  {key}: {value}")
+    else:
+        lines.append("  (using defaults)")
+
+    if agent.system_prompt:
+        lines.append("")
+        lines.append("System Prompt:")
+        # Truncate long prompts
+        prompt_preview = agent.system_prompt[:200]
+        if len(agent.system_prompt) > 200:
+            prompt_preview += "..."
+        lines.append(f"  {prompt_preview}")
+
+    if agent.metadata:
+        lines.append("")
+        lines.append("Metadata:")
+        for key, value in agent.metadata.items():
+            lines.append(f"  {key}: {value}")
+
+    return "\n".join(lines)
+
+
+@tool
+def read_file(path: str) -> str:
+    """Read contents of a text file.
+
+    Args:
+        path: Path to the file to read (absolute or relative)
+
+    Returns:
+        File contents as text, or error message if file not found
     """
     try:
         return Path(path).read_text()
@@ -161,14 +227,14 @@ def read_file(path: str) -> str:
 
 @tool
 def write_file(path: str, content: str) -> str:
-    """Write content to a file.
+    """Write content to a file, creating or overwriting it.
 
     Args:
-        path: Path to file to write
-        content: Content to write
+        path: Path to the file to write (will be created if it doesn't exist)
+        content: Text content to write to the file
 
     Returns:
-        Success message with bytes written
+        Success message with number of bytes written
     """
     try:
         Path(path).write_text(content)
@@ -209,13 +275,13 @@ def list_files(path: str = ".") -> str:
 
 @tool
 def delete_file(path: str) -> str:
-    """Delete a file.
+    """Delete a file (not directories).
 
     Args:
-        path: Path to file to delete
+        path: Path to the file to delete
 
     Returns:
-        Success message
+        Success message, or error if file not found
     """
     try:
         file_path = Path(path)
@@ -230,13 +296,13 @@ def delete_file(path: str) -> str:
 
 @tool
 def exec_python(code: str) -> str:
-    """Execute Python code.
+    """Execute Python code in an isolated subprocess with 10-second timeout.
 
     Args:
-        code: Python code to execute
+        code: Python code to execute (runs in fresh subprocess, no state persistence)
 
     Returns:
-        Output from code execution
+        Standard output and errors from the code execution
     """
     try:
         result = subprocess.run(
@@ -259,13 +325,13 @@ def exec_python(code: str) -> str:
 
 @tool
 def exec_shell(command: str) -> str:
-    """Execute a shell command.
+    """Execute a shell command with 10-second timeout.
 
     Args:
-        command: Shell command to execute
+        command: Shell command to execute (use with caution - has full shell access)
 
     Returns:
-        Output from command
+        Standard output and errors from the command execution
     """
     try:
         result = subprocess.run(
@@ -289,28 +355,28 @@ def exec_shell(command: str) -> str:
 
 @tool
 def web_search(query: str) -> str:
-    """Search the web (placeholder - requires implementation).
+    """Search the web for information (NOT YET IMPLEMENTED).
 
     Args:
-        query: Search query
+        query: Search query to find relevant web pages
 
     Returns:
-        Search results
+        Search results (currently returns placeholder message)
     """
-    return f"[Web search not yet implemented for query: {query}]"
+    return f"[Web search not yet implemented for query: {query}]\nThis tool requires implementation with a search API."
 
 
 @tool
 def web_fetch(url: str) -> str:
-    """Fetch content from a URL (placeholder - requires implementation).
+    """Fetch content from a URL (NOT YET IMPLEMENTED).
 
     Args:
-        url: URL to fetch
+        url: Full URL to fetch content from (e.g., https://example.com)
 
     Returns:
-        Page content
+        Page content (currently returns placeholder message)
     """
-    return f"[Web fetch not yet implemented for URL: {url}]"
+    return f"[Web fetch not yet implemented for URL: {url}]\nThis tool requires implementation with an HTTP client."
 
 
 @tool
@@ -376,6 +442,7 @@ TOOL_SCHEMAS: dict[str, ToolSchema] = {
     "modify_agent": modify_agent,
     "delete_agent": delete_agent,
     "list_agents": list_agents,
+    "get_agent_details": get_agent_details,
     "read_file": read_file,
     "write_file": write_file,
     "list_files": list_files,
