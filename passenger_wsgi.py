@@ -38,5 +38,13 @@ os.environ.setdefault('PRODUCTION', 'true')
 # Import the FastAPI application
 from aba.web.server import app
 
-# The WSGI application
-application = app
+# FastAPI is an ASGI application, but Passenger needs WSGI
+# Option 1: Use ASGI-to-WSGI adapter (compatible with all Passenger versions)
+try:
+    from asgiref.wsgi import WsgiToAsgi
+    application = WsgiToAsgi(app)
+except ImportError:
+    # Option 2: If Passenger 6.0+ with ASGI support, export ASGI app directly
+    # This requires PassengerAppType asgi in .htaccess
+    application = app
+    print("Warning: asgiref not installed. Ensure Passenger 6.0+ is configured for ASGI.")
