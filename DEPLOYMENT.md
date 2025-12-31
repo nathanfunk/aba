@@ -2,6 +2,8 @@
 
 This guide explains how to deploy the ABA (Agent Builder) project to GoDaddy Linux cPanel web hosting with CI/CD using GitHub Actions.
 
+> **💡 Quick Start:** For most users, we recommend using **cPanel's Application Manager** interface for easier deployment. See [CPANEL-APPLICATION-MANAGER.md](CPANEL-APPLICATION-MANAGER.md) for GUI-based setup instructions. This guide covers the manual/advanced approach.
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)

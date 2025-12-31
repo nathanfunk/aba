@@ -2,6 +2,8 @@
 
 This guide provides a streamlined setup process for deploying ABA to GoDaddy cPanel using GitHub Actions.
 
+> **📌 Easier Alternative:** If you prefer a GUI-based approach, see [CPANEL-APPLICATION-MANAGER.md](CPANEL-APPLICATION-MANAGER.md) for deploying via cPanel's Application Manager interface. It's simpler for initial setup and doesn't require manual Passenger configuration.
+
 ## Overview
 
 The CI/CD pipeline automatically:
