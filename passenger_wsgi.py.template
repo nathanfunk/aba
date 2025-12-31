@@ -1,0 +1,42 @@
+"""
+WSGI entry point for Passenger (cPanel) deployment.
+This file is used by Passenger to run the FastAPI application.
+"""
+
+import sys
+import os
+from pathlib import Path
+
+# Add the application directory to the Python path
+app_dir = Path(__file__).parent
+sys.path.insert(0, str(app_dir))
+sys.path.insert(0, str(app_dir / "src"))
+
+# Set up virtual environment
+venv_dir = app_dir / "venv"
+if venv_dir.exists():
+    # Activate virtual environment
+    activate_this = venv_dir / "bin" / "activate_this.py"
+    if activate_this.exists():
+        exec(open(activate_this).read(), {'__file__': str(activate_this)})
+
+# Load environment variables from .env file
+env_file = app_dir / ".env"
+if env_file.exists():
+    with open(env_file) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                key, _, value = line.partition('=')
+                os.environ.setdefault(key.strip(), value.strip())
+
+# Import the FastAPI application
+from aba.web.server import create_app
+
+# Create the application instance
+application = create_app()
+
+# For Passenger compatibility
+def application_wrapper(environ, start_response):
+    """WSGI application wrapper for Passenger."""
+    return application(environ, start_response)

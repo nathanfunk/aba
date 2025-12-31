@@ -214,3 +214,13 @@ src/aba/web/static/vite.svg
 # Node.js
 web-ui/node_modules/
 web-ui/dist/
+
+# cPanel / Passenger specific
+tmp/restart.txt
+tmp/
+passenger_wsgi.py.bak
+error_log
+
+# Production environment
+.env.production
+.env.local
